@@ -1,15 +1,15 @@
-// This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
-// © AMD Advanced Trading System
+// This Pine Script source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// AMD Advanced Trading System
 
 //@version=5
 strategy("AMD Advanced Trading System", overlay=true,
-         default_qty_type=strategy.percent_of_equity,
-         default_qty_value=10,
-         initial_capital=100000,
-         commission_type=strategy.commission.percent,
-         commission_value=0.1,
-         slippage=1,
-         max_bars_back=500)
+  default_qty_type=strategy.percent_of_equity,
+  default_qty_value=10,
+  initial_capital=100000,
+  commission_type=strategy.commission.percent,
+  commission_value=0.1,
+  slippage=1,
+  max_bars_back=500)
 
 // ============================================================================
 // SECTION 1: INPUT PARAMETERS
@@ -28,41 +28,41 @@ showEmaVSlow  = input.bool(true, "Show EMA V.Slow",  group=grpTrend)
 
 // --- Momentum Indicators ---
 grpMom = "Momentum Indicators"
-rsiLen        = input.int(14, "RSI Length",             minval=1, group=grpMom)
-rsiOB         = input.int(70, "RSI Overbought",        minval=50, maxval=100, group=grpMom)
-rsiOS         = input.int(30, "RSI Oversold",           minval=0,  maxval=50,  group=grpMom)
-macdFastLen   = input.int(12, "MACD Fast Length",       minval=1, group=grpMom)
-macdSlowLen   = input.int(26, "MACD Slow Length",       minval=1, group=grpMom)
-macdSigLen    = input.int(9,  "MACD Signal Length",     minval=1, group=grpMom)
-stochKLen     = input.int(14, "Stochastic %K Length",   minval=1, group=grpMom)
-stochDSmooth  = input.int(3,  "Stochastic %D Smoothing",minval=1, group=grpMom)
-stochOB       = input.int(80, "Stochastic Overbought",  minval=50, maxval=100, group=grpMom)
-stochOS       = input.int(20, "Stochastic Oversold",     minval=0,  maxval=50,  group=grpMom)
+rsiLen        = input.int(14, "RSI Length",              minval=1, group=grpMom)
+rsiOB         = input.int(70, "RSI Overbought",         minval=50, maxval=100, group=grpMom)
+rsiOS         = input.int(30, "RSI Oversold",            minval=0,  maxval=50,  group=grpMom)
+macdFastLen   = input.int(12, "MACD Fast Length",        minval=1, group=grpMom)
+macdSlowLen   = input.int(26, "MACD Slow Length",        minval=1, group=grpMom)
+macdSigLen    = input.int(9,  "MACD Signal Length",      minval=1, group=grpMom)
+stochKLen     = input.int(14, "Stochastic K Length",     minval=1, group=grpMom)
+stochDSmooth  = input.int(3,  "Stochastic D Smoothing",  minval=1, group=grpMom)
+stochOB       = input.int(80, "Stochastic Overbought",   minval=50, maxval=100, group=grpMom)
+stochOS       = input.int(20, "Stochastic Oversold",      minval=0,  maxval=50,  group=grpMom)
 
 // --- Volatility Indicators ---
 grpVol = "Volatility Indicators"
-bbLen         = input.int(20,   "BB Length",             minval=1, group=grpVol)
-bbMult        = input.float(2.0,"BB StdDev Multiplier",  minval=0.1, step=0.1, group=grpVol)
-atrLen        = input.int(14,   "ATR Length",            minval=1, group=grpVol)
-atrMultSL     = input.float(1.5,"ATR Mult Stop Loss",    minval=0.1, step=0.1, group=grpVol)
-atrMultTP     = input.float(3.0,"ATR Mult Take Profit",  minval=0.1, step=0.1, group=grpVol)
+bbLen         = input.int(20,    "BB Length",              minval=1, group=grpVol)
+bbMult        = input.float(2.0, "BB StdDev Multiplier",  minval=0.1, step=0.1, group=grpVol)
+atrLen        = input.int(14,    "ATR Length",             minval=1, group=grpVol)
+atrMultSL     = input.float(1.5, "ATR Mult Stop Loss",    minval=0.1, step=0.1, group=grpVol)
+atrMultTP     = input.float(3.0, "ATR Mult Take Profit",  minval=0.1, step=0.1, group=grpVol)
 
 // --- Volume Indicators ---
 grpVolume = "Volume Indicators"
-volSmaLen     = input.int(20,   "Volume SMA Length",     minval=1, group=grpVolume)
-volSpikeMult  = input.float(1.5,"Volume Spike Multiplier",minval=1.0, step=0.1, group=grpVolume)
-enableOBV     = input.bool(true,"Enable OBV",            group=grpVolume)
-enableVWAP    = input.bool(true,"Enable VWAP",           group=grpVolume)
+volSmaLen     = input.int(20,    "Volume SMA Length",       minval=1, group=grpVolume)
+volSpikeMult  = input.float(1.5, "Volume Spike Multiplier", minval=1.0, step=0.1, group=grpVolume)
+enableOBV     = input.bool(true, "Enable OBV",              group=grpVolume)
+enableVWAP    = input.bool(true, "Enable VWAP",             group=grpVolume)
 
 // --- Risk Management ---
 grpRisk = "Risk Management"
 slType        = input.string("ATR-based", "Stop Loss Type", options=["ATR-based", "Percentage", "Fixed Points"], group=grpRisk)
-slPct         = input.float(2.0, "Stop Loss %",          minval=0.1, step=0.1, group=grpRisk)
-tpPct         = input.float(6.0, "Take Profit %",        minval=0.1, step=0.1, group=grpRisk)
-enableTrail   = input.bool(true, "Enable Trailing Stop",  group=grpRisk)
-trailAtrMult  = input.float(2.0, "Trail Stop ATR Mult",   minval=0.1, step=0.1, group=grpRisk)
-maxDailyLoss  = input.float(5.0, "Max Daily Loss %",      minval=0.1, step=0.1, group=grpRisk)
-fixedSLPoints = input.float(5.0, "Fixed SL Points",       minval=0.1, step=0.1, group=grpRisk)
+slPct         = input.float(2.0, "Stop Loss Pct",         minval=0.1, step=0.1, group=grpRisk)
+tpPct         = input.float(6.0, "Take Profit Pct",       minval=0.1, step=0.1, group=grpRisk)
+enableTrail   = input.bool(true, "Enable Trailing Stop",   group=grpRisk)
+trailAtrMult  = input.float(2.0, "Trail Stop ATR Mult",    minval=0.1, step=0.1, group=grpRisk)
+maxDailyLoss  = input.float(5.0, "Max Daily Loss Pct",     minval=0.1, step=0.1, group=grpRisk)
+fixedSLPoints = input.float(5.0, "Fixed SL Points",        minval=0.1, step=0.1, group=grpRisk)
 
 // --- Session & Timing ---
 grpSession = "Session & Timing"
@@ -83,7 +83,7 @@ earningsDays      = input.int(3,      "Days Around Earnings to Avoid", minval=1,
 enableSectorConf  = input.bool(false, "Enable Sector Confirmation (SOX/SMH)", group=grpAMD)
 sectorSymbol      = input.string("AMEX:SMH", "Sector Symbol",      group=grpAMD)
 gapFilterEnable   = input.bool(false, "Enable Gap Filter",          group=grpAMD)
-gapPct            = input.float(3.0,  "Gap % Threshold",            minval=0.5, step=0.5, group=grpAMD)
+gapPct            = input.float(3.0,  "Gap Pct Threshold",          minval=0.5, step=0.5, group=grpAMD)
 gapWaitBars       = input.int(3,      "Bars to Wait After Gap",     minval=1, group=grpAMD)
 
 // --- Multi-Timeframe ---
@@ -129,14 +129,14 @@ rsiValue = ta.rsi(close, rsiLen)
 
 // RSI Divergence Detection (lookback 5 bars for swing points)
 rsiDivLookback = 5
-priceLow1  = ta.lowest(low,  rsiDivLookback)
+priceLow1  = ta.lowest(low, rsiDivLookback)
 priceHigh1 = ta.highest(high, rsiDivLookback)
-rsiLow1    = ta.lowest(rsiValue,  rsiDivLookback)
+rsiLow1    = ta.lowest(rsiValue, rsiDivLookback)
 rsiHigh1   = ta.highest(rsiValue, rsiDivLookback)
 
-priceLow2  = ta.lowest(low,  rsiDivLookback)[rsiDivLookback]
+priceLow2  = ta.lowest(low, rsiDivLookback)[rsiDivLookback]
 priceHigh2 = ta.highest(high, rsiDivLookback)[rsiDivLookback]
-rsiLow2    = ta.lowest(rsiValue,  rsiDivLookback)[rsiDivLookback]
+rsiLow2    = ta.lowest(rsiValue, rsiDivLookback)[rsiDivLookback]
 rsiHigh2   = ta.highest(rsiValue, rsiDivLookback)[rsiDivLookback]
 
 bullishDivergence = (priceLow1 < priceLow2) and (rsiLow1 > rsiLow2)
@@ -165,7 +165,7 @@ bbLower = bbBasis - bbDev
 bbWidth = (bbUpper - bbLower) / bbBasis
 bbPctB  = (close - bbLower) / (bbUpper - bbLower)
 
-// Squeeze detection: bandwidth below 20-period low of bandwidth
+// Squeeze detection
 bbWidthSma  = ta.sma(bbWidth, 20)
 bbSqueeze   = bbWidth < ta.lowest(bbWidth, 20)[1] * 1.1
 bbBreakUp   = close > bbUpper
@@ -211,31 +211,17 @@ totalRange = high - low
 isBullish  = close > open
 isBearish  = close < open
 
-// Hammer: small body at top, long lower wick
 hammer = lowerWick > bodySize * 2 and upperWick < bodySize * 0.5 and totalRange > 0
-
-// Inverted Hammer: small body at bottom, long upper wick
 invertedHammer = upperWick > bodySize * 2 and lowerWick < bodySize * 0.5 and totalRange > 0
-
-// Bullish Engulfing
 bullEngulfing = isBearish[1] and isBullish and open <= close[1] and close >= open[1] and bodySize > bodySize[1]
-
-// Bearish Engulfing
 bearEngulfing = isBullish[1] and isBearish and open >= close[1] and close <= open[1] and bodySize > bodySize[1]
-
-// Doji
 doji = bodySize < totalRange * 0.1 and totalRange > 0
 
-// Morning Star (3-bar)
-morningStar = isBearish[2] and bodySize[2] > ta.sma(bodySize, 10) and bodySize[1] < bodySize[2] * 0.3 and isBullish and close > (open[2] + close[2]) / 2
+bodySma = ta.sma(bodySize, 10)
+morningStar = isBearish[2] and bodySize[2] > bodySma and bodySize[1] < bodySize[2] * 0.3 and isBullish and close > (open[2] + close[2]) / 2
+eveningStar = isBullish[2] and bodySize[2] > bodySma and bodySize[1] < bodySize[2] * 0.3 and isBearish and close < (open[2] + close[2]) / 2
 
-// Evening Star (3-bar)
-eveningStar = isBullish[2] and bodySize[2] > ta.sma(bodySize, 10) and bodySize[1] < bodySize[2] * 0.3 and isBearish and close < (open[2] + close[2]) / 2
-
-// Three White Soldiers
 threeWhiteSoldiers = isBullish and isBullish[1] and isBullish[2] and close > close[1] and close[1] > close[2] and open > open[1] and open[1] > open[2]
-
-// Three Black Crows
 threeBlackCrows = isBearish and isBearish[1] and isBearish[2] and close < close[1] and close[1] < close[2] and open < open[1] and open[1] < open[2]
 
 bullishPattern = hammer or invertedHammer or bullEngulfing or morningStar or threeWhiteSoldiers
@@ -265,7 +251,7 @@ isGap      = gapPctCalc > gapPct
 if isGap and barstate.isconfirmed
     gapBarCount := gapWaitBars
 if gapBarCount > 0
-    gapBarCount -= 1
+    gapBarCount := gapBarCount - 1
 
 gapFilterOk = gapFilterEnable ? gapBarCount == 0 : true
 
@@ -315,20 +301,29 @@ shortCond7 = not bullishDivergence
 shortCond8 = not highVolatility
 
 // --- Scoring ---
-longScore = (longCond1 ? 1 : 0) + (longCond2 ? 1 : 0) + (longCond3 ? 1 : 0) +
-            (longCond4 ? 1 : 0) + (longCond5 ? 1 : 0) + (longCond6 ? 1 : 0) +
-            (longCond7 ? 1 : 0) + (longCond8 ? 1 : 0)
+longC1  = longCond1 ? 1 : 0
+longC2  = longCond2 ? 1 : 0
+longC3  = longCond3 ? 1 : 0
+longC4  = longCond4 ? 1 : 0
+longC5  = longCond5 ? 1 : 0
+longC6  = longCond6 ? 1 : 0
+longC7  = longCond7 ? 1 : 0
+longC8  = longCond8 ? 1 : 0
+longScore = longC1 + longC2 + longC3 + longC4 + longC5 + longC6 + longC7 + longC8
 
-shortScore = (shortCond1 ? 1 : 0) + (shortCond2 ? 1 : 0) + (shortCond3 ? 1 : 0) +
-             (shortCond4 ? 1 : 0) + (shortCond5 ? 1 : 0) + (shortCond6 ? 1 : 0) +
-             (shortCond7 ? 1 : 0) + (shortCond8 ? 1 : 0)
+shortC1  = shortCond1 ? 1 : 0
+shortC2  = shortCond2 ? 1 : 0
+shortC3  = shortCond3 ? 1 : 0
+shortC4  = shortCond4 ? 1 : 0
+shortC5  = shortCond5 ? 1 : 0
+shortC6  = shortCond6 ? 1 : 0
+shortC7  = shortCond7 ? 1 : 0
+shortC8  = shortCond8 ? 1 : 0
+shortScore = shortC1 + shortC2 + shortC3 + shortC4 + shortC5 + shortC6 + shortC7 + shortC8
 
 // --- Entry Signals ---
-longEntryStrict = longCond1 and longCond2 and longCond3 and longCond4 and
-                  longCond5 and longCond6 and longCond7 and longCond8
-
-shortEntryStrict = shortCond1 and shortCond2 and shortCond3 and shortCond4 and
-                   shortCond5 and shortCond6 and shortCond7 and shortCond8
+longEntryStrict = longCond1 and longCond2 and longCond3 and longCond4 and longCond5 and longCond6 and longCond7 and longCond8
+shortEntryStrict = shortCond1 and shortCond2 and shortCond3 and shortCond4 and shortCond5 and shortCond6 and shortCond7 and shortCond8
 
 longEntryScore  = longScore >= minLongScore
 shortEntryScore = shortScore >= minShortScore
@@ -337,7 +332,7 @@ longEntry  = useScoring ? longEntryScore : longEntryStrict
 shortEntry = useScoring ? shortEntryScore : shortEntryStrict
 
 // Apply all filters
-longEntry  := longEntry  and sessionAllowed and gapFilterOk and sectorBullish and mtfLongOk  and barstate.isconfirmed
+longEntry  := longEntry and sessionAllowed and gapFilterOk and sectorBullish and mtfLongOk and barstate.isconfirmed
 shortEntry := shortEntry and sessionAllowed and gapFilterOk and sectorBearish and mtfShortOk and barstate.isconfirmed
 
 // ============================================================================
@@ -394,7 +389,7 @@ currentDay = dayofweek
 if currentDay != lastDay
     dailyPnL := 0.0
     lastDay := currentDay
-dailyPnL += strategy.netprofit - nz(strategy.netprofit[1], 0)
+dailyPnL := dailyPnL + (strategy.netprofit - nz(strategy.netprofit[1], 0))
 dailyLossExceeded = strategy.equity > 0 ? math.abs(dailyPnL) / strategy.equity * 100 > maxDailyLoss and dailyPnL < 0 : false
 
 // ============================================================================
@@ -410,23 +405,17 @@ if shortEntry and strategy.position_size == 0 and not dailyLossExceeded
 // Exit management
 if strategy.position_size > 0
     if enableTrail
-        strategy.exit("Long Exit", from_entry="Long",
-                       stop=longSL, limit=longTP,
-                       trail_points=trailPoints, trail_offset=trailPoints)
+        strategy.exit("Long Exit", from_entry="Long", stop=longSL, limit=longTP, trail_points=trailPoints, trail_offset=trailPoints)
     else
-        strategy.exit("Long Exit", from_entry="Long",
-                       stop=longSL, limit=longTP)
+        strategy.exit("Long Exit", from_entry="Long", stop=longSL, limit=longTP)
     if longExit
         strategy.close("Long", comment="Signal Exit")
 
 if strategy.position_size < 0
     if enableTrail
-        strategy.exit("Short Exit", from_entry="Short",
-                       stop=shortSL, limit=shortTP,
-                       trail_points=trailPoints, trail_offset=trailPoints)
+        strategy.exit("Short Exit", from_entry="Short", stop=shortSL, limit=shortTP, trail_points=trailPoints, trail_offset=trailPoints)
     else
-        strategy.exit("Short Exit", from_entry="Short",
-                       stop=shortSL, limit=shortTP)
+        strategy.exit("Short Exit", from_entry="Short", stop=shortSL, limit=shortTP)
     if shortExit
         strategy.close("Short", comment="Signal Exit")
 
@@ -435,10 +424,10 @@ if strategy.position_size < 0
 // ============================================================================
 
 // --- EMA Plots ---
-plot(showEmaFast  ? emaFast  : na, "EMA Fast",    color=color.new(color.green,  0), linewidth=1)
-plot(showEmaMed   ? emaMed   : na, "EMA Medium",  color=color.new(color.blue,   0), linewidth=1)
-plot(showEmaSlow  ? emaSlow  : na, "EMA Slow",    color=color.new(color.orange, 0), linewidth=2)
-plot(showEmaVSlow ? emaVSlow : na, "EMA V.Slow",  color=color.new(color.red,    0), linewidth=2)
+plot(showEmaFast  ? emaFast  : na, "EMA Fast",   color=color.new(color.green, 0), linewidth=1)
+plot(showEmaMed   ? emaMed   : na, "EMA Medium", color=color.new(color.blue, 0),  linewidth=1)
+plot(showEmaSlow  ? emaSlow  : na, "EMA Slow",   color=color.new(color.orange, 0), linewidth=2)
+plot(showEmaVSlow ? emaVSlow : na, "EMA V.Slow", color=color.new(color.red, 0),   linewidth=2)
 
 // --- Bollinger Bands ---
 pBBUpper = plot(showBB ? bbUpper : na, "BB Upper", color=color.new(color.gray, 50))
@@ -450,47 +439,37 @@ fill(pBBUpper, pBBLower, color=color.new(color.gray, 90), title="BB Fill")
 plot(enableVWAP ? vwapValue : na, "VWAP", color=color.new(color.purple, 0), linewidth=2)
 
 // --- Support/Resistance ---
-plot(showSRLevels and not na(recentResistance) ? recentResistance : na, "Resistance",
-     color=color.new(color.red, 50), style=plot.style_circles, linewidth=2)
-plot(showSRLevels and not na(recentSupport) ? recentSupport : na, "Support",
-     color=color.new(color.green, 50), style=plot.style_circles, linewidth=2)
+resistancePlot = showSRLevels and not na(recentResistance) ? recentResistance : na
+supportPlot = showSRLevels and not na(recentSupport) ? recentSupport : na
+plot(resistancePlot, "Resistance", color=color.new(color.red, 50), style=plot.style_circles, linewidth=2)
+plot(supportPlot, "Support", color=color.new(color.green, 50), style=plot.style_circles, linewidth=2)
 
 // --- Buy/Sell Labels ---
-plotshape(showLabels and longEntry  ? low  : na, "Buy Signal",  style=shape.triangleup,
-          location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="BUY")
-plotshape(showLabels and shortEntry ? high : na, "Sell Signal", style=shape.triangledown,
-          location=location.abovebar, color=color.new(color.red, 0),   size=size.small, text="SELL")
+plotshape(showLabels and longEntry ? low : na, "Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="BUY")
+plotshape(showLabels and shortEntry ? high : na, "Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="SELL")
 
 // --- Golden/Death Cross Labels ---
-plotshape(goldenCross, "Golden Cross", style=shape.diamond,
-          location=location.belowbar, color=color.new(color.lime, 0), size=size.normal, text="GC")
-plotshape(deathCross, "Death Cross", style=shape.diamond,
-          location=location.abovebar, color=color.new(color.maroon, 0), size=size.normal, text="DC")
+plotshape(goldenCross, "Golden Cross", style=shape.diamond, location=location.belowbar, color=color.new(color.lime, 0), size=size.normal, text="GC")
+plotshape(deathCross, "Death Cross", style=shape.diamond, location=location.abovebar, color=color.new(color.maroon, 0), size=size.normal, text="DC")
 
 // --- Background Colors ---
-posColor = strategy.position_size > 0 ? color.new(color.green, 92) :
-           strategy.position_size < 0 ? color.new(color.red, 92) : na
+posColor = strategy.position_size > 0 ? color.new(color.green, 92) : strategy.position_size < 0 ? color.new(color.red, 92) : na
 bgcolor(showBgColor ? posColor : na, title="Position Background")
 bgcolor(showBgColor and bbSqueeze ? color.new(color.yellow, 92) : na, title="BB Squeeze Background")
 
 // --- Stop Loss / Take Profit Lines ---
-plot(strategy.position_size > 0 ? longSL : na, "Long SL",  color=color.new(color.red,   0), style=plot.style_linebr, linewidth=1)
-plot(strategy.position_size > 0 ? longTP : na, "Long TP",  color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
-plot(strategy.position_size < 0 ? shortSL : na, "Short SL", color=color.new(color.red,   0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size > 0 ? longSL : na, "Long SL", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size > 0 ? longTP : na, "Long TP", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size < 0 ? shortSL : na, "Short SL", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=1)
 plot(strategy.position_size < 0 ? shortTP : na, "Short TP", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
 
 // ============================================================================
 // SECTION 11: DASHBOARD TABLE
 // ============================================================================
 
-if showDashboard and barstate.islast
-    var table dashboard = table.new(position.top_right, 2, 12,
-                                     bgcolor=color.new(color.black, 30),
-                                     border_color=color.gray,
-                                     border_width=1,
-                                     frame_color=color.gray,
-                                     frame_width=1)
+var table dashboard = table.new(position.top_right, 2, 12, bgcolor=color.new(color.black, 30), border_color=color.gray, border_width=1, frame_color=color.gray, frame_width=1)
 
+if showDashboard and barstate.islast
     trendStr = bullishTrend ? "BULLISH" : bearishTrend ? "BEARISH" : "NEUTRAL"
     trendClr = bullishTrend ? color.green : bearishTrend ? color.red : color.yellow
 
@@ -527,41 +506,41 @@ if showDashboard and barstate.islast
     pfClr = profitFactor >= 1.5 ? color.green : profitFactor >= 1.0 ? color.yellow : color.red
 
     // Headers
-    table.cell(dashboard, 0, 0, "METRIC",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.teal, 30))
-    table.cell(dashboard, 1, 0, "VALUE",   text_color=color.white, text_size=size.small, bgcolor=color.new(color.teal, 30))
+    table.cell(dashboard, 0, 0, "METRIC", text_color=color.white, text_size=size.small, bgcolor=color.new(color.teal, 30))
+    table.cell(dashboard, 1, 0, "VALUE",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.teal, 30))
 
     // Row data
-    table.cell(dashboard, 0, 1,  "Trend",          text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 1,  trendStr,          text_color=trendClr,   text_size=size.tiny)
+    table.cell(dashboard, 0, 1, "Trend",         text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 1, trendStr,         text_color=trendClr,   text_size=size.tiny)
 
-    table.cell(dashboard, 0, 2,  "RSI",             text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 2,  rsiStr + rsiStatus,text_color=rsiClr,     text_size=size.tiny)
+    table.cell(dashboard, 0, 2, "RSI",            text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 2, rsiStr + rsiStatus, text_color=rsiClr,   text_size=size.tiny)
 
-    table.cell(dashboard, 0, 3,  "MACD",            text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 3,  macdStr,           text_color=macdClr,    text_size=size.tiny)
+    table.cell(dashboard, 0, 3, "MACD",           text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 3, macdStr,          text_color=macdClr,    text_size=size.tiny)
 
-    table.cell(dashboard, 0, 4,  "Volume",          text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 4,  volStr,            text_color=volClr,     text_size=size.tiny)
+    table.cell(dashboard, 0, 4, "Volume",         text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 4, volStr,           text_color=volClr,     text_size=size.tiny)
 
-    table.cell(dashboard, 0, 5,  "ATR",             text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 5,  str.tostring(atrValue, "#.00"), text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 0, 5, "ATR",            text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 5, str.tostring(atrValue, "#.00"), text_color=color.white, text_size=size.tiny)
 
-    table.cell(dashboard, 0, 6,  "Signal Score",    text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 6,  scoreStr,          text_color=scoreClr,   text_size=size.tiny)
+    table.cell(dashboard, 0, 6, "Signal Score",   text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 6, scoreStr,         text_color=scoreClr,   text_size=size.tiny)
 
-    table.cell(dashboard, 0, 7,  "Position",        text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 7,  posStr,            text_color=posClr,     text_size=size.tiny)
+    table.cell(dashboard, 0, 7, "Position",       text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 7, posStr,           text_color=posClr,     text_size=size.tiny)
 
-    table.cell(dashboard, 0, 8,  "Unrealized P&L",  text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 8,  pnlStr,            text_color=pnlClr,    text_size=size.tiny)
+    table.cell(dashboard, 0, 8, "Unrealized PnL", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 8, pnlStr,           text_color=pnlClr,    text_size=size.tiny)
 
-    table.cell(dashboard, 0, 9,  "Win Rate",        text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 9,  winRateStr,        text_color=winRateClr, text_size=size.tiny)
+    table.cell(dashboard, 0, 9, "Win Rate",       text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 9, winRateStr,       text_color=winRateClr, text_size=size.tiny)
 
-    table.cell(dashboard, 0, 10, "Profit Factor",   text_color=color.white, text_size=size.tiny)
-    table.cell(dashboard, 1, 10, pfStr,             text_color=pfClr,      text_size=size.tiny)
+    table.cell(dashboard, 0, 10, "Profit Factor", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 10, pfStr,           text_color=pfClr,      text_size=size.tiny)
 
-    table.cell(dashboard, 0, 11, "Total Trades",    text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 0, 11, "Total Trades",  text_color=color.white, text_size=size.tiny)
     table.cell(dashboard, 1, 11, str.tostring(totalTrades), text_color=color.white, text_size=size.tiny)
 
 // ============================================================================
@@ -575,4 +554,4 @@ alertcondition(shortExit,     title="AMD Short Exit",    message="AMD: Exit shor
 alertcondition(goldenCross,   title="AMD Golden Cross",  message="AMD: Golden Cross detected (EMA 50 > EMA 200)")
 alertcondition(deathCross,    title="AMD Death Cross",   message="AMD: Death Cross detected (EMA 50 < EMA 200)")
 alertcondition(volumeSpike,   title="AMD Volume Spike",  message="AMD: Unusual volume detected")
-alertcondition(bbSqueeze,     title="AMD BB Squeeze",    message="AMD: Bollinger Band squeeze — breakout imminent")
+alertcondition(bbSqueeze,     title="AMD BB Squeeze",    message="AMD: Bollinger Band squeeze - breakout imminent")
