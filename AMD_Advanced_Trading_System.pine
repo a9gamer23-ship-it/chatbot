@@ -1,0 +1,578 @@
+// This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © AMD Advanced Trading System
+
+//@version=5
+strategy("AMD Advanced Trading System", overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=10,
+         initial_capital=100000,
+         commission_type=strategy.commission.percent,
+         commission_value=0.1,
+         slippage=1,
+         max_bars_back=500)
+
+// ============================================================================
+// SECTION 1: INPUT PARAMETERS
+// ============================================================================
+
+// --- Trend Indicators ---
+grpTrend = "Trend Indicators"
+emaFastLen    = input.int(9,   "EMA Fast Length",       minval=1, group=grpTrend)
+emaMedLen     = input.int(21,  "EMA Medium Length",     minval=1, group=grpTrend)
+emaSlowLen    = input.int(50,  "EMA Slow Length",       minval=1, group=grpTrend)
+emaVSlowLen   = input.int(200, "EMA Very Slow Length",  minval=1, group=grpTrend)
+showEmaFast   = input.bool(true, "Show EMA Fast",   group=grpTrend)
+showEmaMed    = input.bool(true, "Show EMA Medium",  group=grpTrend)
+showEmaSlow   = input.bool(true, "Show EMA Slow",    group=grpTrend)
+showEmaVSlow  = input.bool(true, "Show EMA V.Slow",  group=grpTrend)
+
+// --- Momentum Indicators ---
+grpMom = "Momentum Indicators"
+rsiLen        = input.int(14, "RSI Length",             minval=1, group=grpMom)
+rsiOB         = input.int(70, "RSI Overbought",        minval=50, maxval=100, group=grpMom)
+rsiOS         = input.int(30, "RSI Oversold",           minval=0,  maxval=50,  group=grpMom)
+macdFastLen   = input.int(12, "MACD Fast Length",       minval=1, group=grpMom)
+macdSlowLen   = input.int(26, "MACD Slow Length",       minval=1, group=grpMom)
+macdSigLen    = input.int(9,  "MACD Signal Length",     minval=1, group=grpMom)
+stochKLen     = input.int(14, "Stochastic %K Length",   minval=1, group=grpMom)
+stochDSmooth  = input.int(3,  "Stochastic %D Smoothing",minval=1, group=grpMom)
+stochOB       = input.int(80, "Stochastic Overbought",  minval=50, maxval=100, group=grpMom)
+stochOS       = input.int(20, "Stochastic Oversold",     minval=0,  maxval=50,  group=grpMom)
+
+// --- Volatility Indicators ---
+grpVol = "Volatility Indicators"
+bbLen         = input.int(20,   "BB Length",             minval=1, group=grpVol)
+bbMult        = input.float(2.0,"BB StdDev Multiplier",  minval=0.1, step=0.1, group=grpVol)
+atrLen        = input.int(14,   "ATR Length",            minval=1, group=grpVol)
+atrMultSL     = input.float(1.5,"ATR Mult Stop Loss",    minval=0.1, step=0.1, group=grpVol)
+atrMultTP     = input.float(3.0,"ATR Mult Take Profit",  minval=0.1, step=0.1, group=grpVol)
+
+// --- Volume Indicators ---
+grpVolume = "Volume Indicators"
+volSmaLen     = input.int(20,   "Volume SMA Length",     minval=1, group=grpVolume)
+volSpikeMult  = input.float(1.5,"Volume Spike Multiplier",minval=1.0, step=0.1, group=grpVolume)
+enableOBV     = input.bool(true,"Enable OBV",            group=grpVolume)
+enableVWAP    = input.bool(true,"Enable VWAP",           group=grpVolume)
+
+// --- Risk Management ---
+grpRisk = "Risk Management"
+slType        = input.string("ATR-based", "Stop Loss Type", options=["ATR-based", "Percentage", "Fixed Points"], group=grpRisk)
+slPct         = input.float(2.0, "Stop Loss %",          minval=0.1, step=0.1, group=grpRisk)
+tpPct         = input.float(6.0, "Take Profit %",        minval=0.1, step=0.1, group=grpRisk)
+enableTrail   = input.bool(true, "Enable Trailing Stop",  group=grpRisk)
+trailAtrMult  = input.float(2.0, "Trail Stop ATR Mult",   minval=0.1, step=0.1, group=grpRisk)
+maxDailyLoss  = input.float(5.0, "Max Daily Loss %",      minval=0.1, step=0.1, group=grpRisk)
+fixedSLPoints = input.float(5.0, "Fixed SL Points",       minval=0.1, step=0.1, group=grpRisk)
+
+// --- Session & Timing ---
+grpSession = "Session & Timing"
+tradingSession = input.session("0930-1600", "Trading Session (EST)", group=grpSession)
+enablePreMkt   = input.bool(false, "Enable Pre-market Filter", group=grpSession)
+enableAfterHrs = input.bool(false, "Enable After-hours Filter", group=grpSession)
+
+// --- Backtesting Date Range ---
+grpBacktest = "Backtesting"
+useDateFilter  = input.bool(false, "Use Date Range Filter", group=grpBacktest)
+startDate      = input.time(timestamp("2020-01-01"), "Start Date", group=grpBacktest)
+endDate        = input.time(timestamp("2030-12-31"), "End Date",   group=grpBacktest)
+
+// --- AMD-Specific ---
+grpAMD = "AMD-Specific"
+earningsFilter    = input.bool(false, "Enable Earnings Filter",     group=grpAMD)
+earningsDays      = input.int(3,      "Days Around Earnings to Avoid", minval=1, group=grpAMD)
+enableSectorConf  = input.bool(false, "Enable Sector Confirmation (SOX/SMH)", group=grpAMD)
+sectorSymbol      = input.string("AMEX:SMH", "Sector Symbol",      group=grpAMD)
+gapFilterEnable   = input.bool(false, "Enable Gap Filter",          group=grpAMD)
+gapPct            = input.float(3.0,  "Gap % Threshold",            minval=0.5, step=0.5, group=grpAMD)
+gapWaitBars       = input.int(3,      "Bars to Wait After Gap",     minval=1, group=grpAMD)
+
+// --- Multi-Timeframe ---
+grpMTF = "Multi-Timeframe Analysis"
+enableMTF     = input.bool(false, "Enable MTF Confirmation", group=grpMTF)
+htfTimeframe  = input.timeframe("60", "Higher Timeframe",    group=grpMTF)
+
+// --- Visual Settings ---
+grpVisual = "Visual Settings"
+showLabels    = input.bool(true,  "Show Buy/Sell Labels",    group=grpVisual)
+showDashboard = input.bool(true,  "Show Dashboard Table",    group=grpVisual)
+showBgColor   = input.bool(true,  "Background on Signal",    group=grpVisual)
+showSRLevels  = input.bool(true,  "Show Support/Resistance", group=grpVisual)
+showBB        = input.bool(true,  "Show Bollinger Bands",    group=grpVisual)
+
+// --- Signal Mode ---
+grpSignal = "Signal Mode"
+useScoring    = input.bool(false, "Use Scoring System (vs strict AND)", group=grpSignal)
+minLongScore  = input.int(5, "Min Long Score (out of 8)",  minval=1, maxval=8, group=grpSignal)
+minShortScore = input.int(5, "Min Short Score (out of 8)", minval=1, maxval=8, group=grpSignal)
+
+// ============================================================================
+// SECTION 2: CORE INDICATOR CALCULATIONS
+// ============================================================================
+
+// --- A. Moving Averages ---
+emaFast  = ta.ema(close, emaFastLen)
+emaMed   = ta.ema(close, emaMedLen)
+emaSlow  = ta.ema(close, emaSlowLen)
+emaVSlow = ta.ema(close, emaVSlowLen)
+
+goldenCross = ta.crossover(emaSlow, emaVSlow)
+deathCross  = ta.crossunder(emaSlow, emaVSlow)
+
+bullishTrend = close > emaVSlow and emaFast > emaMed and emaMed > emaSlow
+bearishTrend = close < emaVSlow and emaFast < emaMed and emaMed < emaSlow
+
+emaFastCrossUp   = ta.crossover(emaFast, emaMed)
+emaFastCrossDown = ta.crossunder(emaFast, emaMed)
+
+// --- B. RSI ---
+rsiValue = ta.rsi(close, rsiLen)
+
+// RSI Divergence Detection (lookback 5 bars for swing points)
+rsiDivLookback = 5
+priceLow1  = ta.lowest(low,  rsiDivLookback)
+priceHigh1 = ta.highest(high, rsiDivLookback)
+rsiLow1    = ta.lowest(rsiValue,  rsiDivLookback)
+rsiHigh1   = ta.highest(rsiValue, rsiDivLookback)
+
+priceLow2  = ta.lowest(low,  rsiDivLookback)[rsiDivLookback]
+priceHigh2 = ta.highest(high, rsiDivLookback)[rsiDivLookback]
+rsiLow2    = ta.lowest(rsiValue,  rsiDivLookback)[rsiDivLookback]
+rsiHigh2   = ta.highest(rsiValue, rsiDivLookback)[rsiDivLookback]
+
+bullishDivergence = (priceLow1 < priceLow2) and (rsiLow1 > rsiLow2)
+bearishDivergence = (priceHigh1 > priceHigh2) and (rsiHigh1 < rsiHigh2)
+
+// --- C. MACD ---
+[macdLine, signalLine, histLine] = ta.macd(close, macdFastLen, macdSlowLen, macdSigLen)
+macdBullCross = ta.crossover(macdLine, signalLine)
+macdBearCross = ta.crossunder(macdLine, signalLine)
+macdHistPositive = histLine > 0
+macdHistNegative = histLine < 0
+macdHistTurningPositive = histLine > histLine[1] and histLine[1] <= histLine[2]
+macdHistTurningNegative = histLine < histLine[1] and histLine[1] >= histLine[2]
+
+// --- D. Stochastic Oscillator ---
+stochK = ta.sma(ta.stoch(close, high, low, stochKLen), stochDSmooth)
+stochD = ta.sma(stochK, stochDSmooth)
+stochBullCross = ta.crossover(stochK, stochD) and stochK < stochOS
+stochBearCross = ta.crossunder(stochK, stochD) and stochK > stochOB
+
+// --- E. Bollinger Bands ---
+bbBasis = ta.sma(close, bbLen)
+bbDev   = bbMult * ta.stdev(close, bbLen)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+bbWidth = (bbUpper - bbLower) / bbBasis
+bbPctB  = (close - bbLower) / (bbUpper - bbLower)
+
+// Squeeze detection: bandwidth below 20-period low of bandwidth
+bbWidthSma  = ta.sma(bbWidth, 20)
+bbSqueeze   = bbWidth < ta.lowest(bbWidth, 20)[1] * 1.1
+bbBreakUp   = close > bbUpper
+bbBreakDown = close < bbLower
+
+// --- F. ATR ---
+atrValue = ta.atr(atrLen)
+atrSma   = ta.sma(atrValue, 50)
+highVolatility = atrValue > atrSma * 1.5
+lowVolatility  = atrValue < atrSma * 0.75
+
+// --- G. Volume Analysis ---
+volSma      = ta.sma(volume, volSmaLen)
+volumeSpike = volume > volSma * volSpikeMult
+volumeAboveAvg = volume > volSma
+
+obvValue = ta.obv
+obvEma   = ta.ema(obvValue, 20)
+obvBullish = obvValue > obvEma
+
+vwapValue = ta.vwap(hlc3)
+
+// --- H. Support & Resistance (Pivot Points) ---
+pivotHigh = ta.pivothigh(high, 10, 10)
+pivotLow  = ta.pivotlow(low, 10, 10)
+
+var float recentResistance = na
+var float recentSupport    = na
+if not na(pivotHigh)
+    recentResistance := pivotHigh
+if not na(pivotLow)
+    recentSupport := pivotLow
+
+// Swing highs/lows (20-bar lookback)
+swingHigh20 = ta.highest(high, 20)
+swingLow20  = ta.lowest(low, 20)
+
+// --- I. Candlestick Pattern Recognition ---
+bodySize   = math.abs(close - open)
+upperWick  = high - math.max(close, open)
+lowerWick  = math.min(close, open) - low
+totalRange = high - low
+isBullish  = close > open
+isBearish  = close < open
+
+// Hammer: small body at top, long lower wick
+hammer = lowerWick > bodySize * 2 and upperWick < bodySize * 0.5 and totalRange > 0
+
+// Inverted Hammer: small body at bottom, long upper wick
+invertedHammer = upperWick > bodySize * 2 and lowerWick < bodySize * 0.5 and totalRange > 0
+
+// Bullish Engulfing
+bullEngulfing = isBearish[1] and isBullish and open <= close[1] and close >= open[1] and bodySize > bodySize[1]
+
+// Bearish Engulfing
+bearEngulfing = isBullish[1] and isBearish and open >= close[1] and close <= open[1] and bodySize > bodySize[1]
+
+// Doji
+doji = bodySize < totalRange * 0.1 and totalRange > 0
+
+// Morning Star (3-bar)
+morningStar = isBearish[2] and bodySize[2] > ta.sma(bodySize, 10) and bodySize[1] < bodySize[2] * 0.3 and isBullish and close > (open[2] + close[2]) / 2
+
+// Evening Star (3-bar)
+eveningStar = isBullish[2] and bodySize[2] > ta.sma(bodySize, 10) and bodySize[1] < bodySize[2] * 0.3 and isBearish and close < (open[2] + close[2]) / 2
+
+// Three White Soldiers
+threeWhiteSoldiers = isBullish and isBullish[1] and isBullish[2] and close > close[1] and close[1] > close[2] and open > open[1] and open[1] > open[2]
+
+// Three Black Crows
+threeBlackCrows = isBearish and isBearish[1] and isBearish[2] and close < close[1] and close[1] < close[2] and open < open[1] and open[1] < open[2]
+
+bullishPattern = hammer or invertedHammer or bullEngulfing or morningStar or threeWhiteSoldiers
+bearishPattern = bearEngulfing or eveningStar or threeBlackCrows
+
+// ============================================================================
+// SECTION 3: SESSION & TIMING FILTERS
+// ============================================================================
+
+inSession = not na(time(timeframe.period, tradingSession, "America/New_York"))
+inDateRange = useDateFilter ? (time >= startDate and time <= endDate) : true
+isTradingDay = dayofweek != dayofweek.saturday and dayofweek != dayofweek.sunday
+
+sessionAllowed = inSession and inDateRange and isTradingDay
+
+// ============================================================================
+// SECTION 4: AMD-SPECIFIC FILTERS
+// ============================================================================
+
+// --- Gap Filter ---
+var int gapBarCount = 0
+dailyOpen  = request.security(syminfo.tickerid, "D", open)
+dailyClose = request.security(syminfo.tickerid, "D", close[1])
+gapPctCalc = dailyClose != 0 ? math.abs(dailyOpen - dailyClose) / dailyClose * 100 : 0
+isGap      = gapPctCalc > gapPct
+
+if isGap and barstate.isconfirmed
+    gapBarCount := gapWaitBars
+if gapBarCount > 0
+    gapBarCount -= 1
+
+gapFilterOk = gapFilterEnable ? gapBarCount == 0 : true
+
+// --- Sector Confirmation ---
+sectorClose = request.security(sectorSymbol, timeframe.period, close)
+sectorEma50 = request.security(sectorSymbol, timeframe.period, ta.ema(close, 50))
+sectorBullish = enableSectorConf ? sectorClose > sectorEma50 : true
+sectorBearish = enableSectorConf ? sectorClose < sectorEma50 : true
+
+// ============================================================================
+// SECTION 5: MULTI-TIMEFRAME ANALYSIS
+// ============================================================================
+
+htfRsi      = request.security(syminfo.tickerid, htfTimeframe, ta.rsi(close, rsiLen))
+[htfMacd, htfSignal, htfHist] = request.security(syminfo.tickerid, htfTimeframe, ta.macd(close, macdFastLen, macdSlowLen, macdSigLen))
+htfEmaFast  = request.security(syminfo.tickerid, htfTimeframe, ta.ema(close, emaFastLen))
+htfEmaMed   = request.security(syminfo.tickerid, htfTimeframe, ta.ema(close, emaMedLen))
+htfEmaSlow  = request.security(syminfo.tickerid, htfTimeframe, ta.ema(close, emaSlowLen))
+
+htfBullish = htfEmaFast > htfEmaMed and htfRsi > 40 and htfMacd > htfSignal
+htfBearish = htfEmaFast < htfEmaMed and htfRsi < 60 and htfMacd < htfSignal
+
+mtfLongOk  = enableMTF ? htfBullish : true
+mtfShortOk = enableMTF ? htfBearish : true
+
+// ============================================================================
+// SECTION 6: SIGNAL LOGIC
+// ============================================================================
+
+// --- Individual Conditions (for scoring) ---
+longCond1 = close > emaVSlow
+longCond2 = emaFastCrossUp or (emaFast > emaMed)
+longCond3 = rsiValue > rsiOS and rsiValue < 60
+longCond4 = macdHistPositive or macdHistTurningPositive
+longCond5 = volumeAboveAvg
+longCond6 = close > vwapValue
+longCond7 = not bearishDivergence
+longCond8 = not highVolatility
+
+shortCond1 = close < emaVSlow
+shortCond2 = emaFastCrossDown or (emaFast < emaMed)
+shortCond3 = rsiValue < rsiOB and rsiValue > 40
+shortCond4 = macdHistNegative or macdHistTurningNegative
+shortCond5 = volumeAboveAvg
+shortCond6 = close < vwapValue
+shortCond7 = not bullishDivergence
+shortCond8 = not highVolatility
+
+// --- Scoring ---
+longScore = (longCond1 ? 1 : 0) + (longCond2 ? 1 : 0) + (longCond3 ? 1 : 0) +
+            (longCond4 ? 1 : 0) + (longCond5 ? 1 : 0) + (longCond6 ? 1 : 0) +
+            (longCond7 ? 1 : 0) + (longCond8 ? 1 : 0)
+
+shortScore = (shortCond1 ? 1 : 0) + (shortCond2 ? 1 : 0) + (shortCond3 ? 1 : 0) +
+             (shortCond4 ? 1 : 0) + (shortCond5 ? 1 : 0) + (shortCond6 ? 1 : 0) +
+             (shortCond7 ? 1 : 0) + (shortCond8 ? 1 : 0)
+
+// --- Entry Signals ---
+longEntryStrict = longCond1 and longCond2 and longCond3 and longCond4 and
+                  longCond5 and longCond6 and longCond7 and longCond8
+
+shortEntryStrict = shortCond1 and shortCond2 and shortCond3 and shortCond4 and
+                   shortCond5 and shortCond6 and shortCond7 and shortCond8
+
+longEntryScore  = longScore >= minLongScore
+shortEntryScore = shortScore >= minShortScore
+
+longEntry  = useScoring ? longEntryScore : longEntryStrict
+shortEntry = useScoring ? shortEntryScore : shortEntryStrict
+
+// Apply all filters
+longEntry  := longEntry  and sessionAllowed and gapFilterOk and sectorBullish and mtfLongOk  and barstate.isconfirmed
+shortEntry := shortEntry and sessionAllowed and gapFilterOk and sectorBearish and mtfShortOk and barstate.isconfirmed
+
+// ============================================================================
+// SECTION 7: EXIT CONDITIONS
+// ============================================================================
+
+longExitEma  = emaFastCrossDown
+longExitRsi  = rsiValue > rsiOB and rsiValue < rsiValue[1]
+longExitMacd = macdBearCross
+
+shortExitEma  = emaFastCrossUp
+shortExitRsi  = rsiValue < rsiOS and rsiValue > rsiValue[1]
+shortExitMacd = macdBullCross
+
+longExit  = (longExitEma or longExitRsi or longExitMacd) and barstate.isconfirmed
+shortExit = (shortExitEma or shortExitRsi or shortExitMacd) and barstate.isconfirmed
+
+// ============================================================================
+// SECTION 8: RISK MANAGEMENT & POSITION SIZING
+// ============================================================================
+
+// Dynamic SL/TP based on selected type
+longSL = switch slType
+    "ATR-based"    => close - atrValue * atrMultSL
+    "Percentage"   => close * (1 - slPct / 100)
+    "Fixed Points" => close - fixedSLPoints
+    => close - atrValue * atrMultSL
+
+longTP = switch slType
+    "ATR-based"    => close + atrValue * atrMultTP
+    "Percentage"   => close * (1 + tpPct / 100)
+    "Fixed Points" => close + fixedSLPoints * (atrMultTP / atrMultSL)
+    => close + atrValue * atrMultTP
+
+shortSL = switch slType
+    "ATR-based"    => close + atrValue * atrMultSL
+    "Percentage"   => close * (1 + slPct / 100)
+    "Fixed Points" => close + fixedSLPoints
+    => close + atrValue * atrMultSL
+
+shortTP = switch slType
+    "ATR-based"    => close - atrValue * atrMultTP
+    "Percentage"   => close * (1 - tpPct / 100)
+    "Fixed Points" => close - fixedSLPoints * (atrMultTP / atrMultSL)
+    => close - atrValue * atrMultTP
+
+trailOffset = atrValue * trailAtrMult
+trailPoints = trailOffset / syminfo.mintick
+
+// --- Max Daily Loss Protection ---
+var float dailyPnL = 0.0
+var int lastDay = 0
+currentDay = dayofweek
+if currentDay != lastDay
+    dailyPnL := 0.0
+    lastDay := currentDay
+dailyPnL += strategy.netprofit - nz(strategy.netprofit[1], 0)
+dailyLossExceeded = strategy.equity > 0 ? math.abs(dailyPnL) / strategy.equity * 100 > maxDailyLoss and dailyPnL < 0 : false
+
+// ============================================================================
+// SECTION 9: STRATEGY EXECUTION
+// ============================================================================
+
+if longEntry and strategy.position_size == 0 and not dailyLossExceeded
+    strategy.entry("Long", strategy.long)
+
+if shortEntry and strategy.position_size == 0 and not dailyLossExceeded
+    strategy.entry("Short", strategy.short)
+
+// Exit management
+if strategy.position_size > 0
+    if enableTrail
+        strategy.exit("Long Exit", from_entry="Long",
+                       stop=longSL, limit=longTP,
+                       trail_points=trailPoints, trail_offset=trailPoints)
+    else
+        strategy.exit("Long Exit", from_entry="Long",
+                       stop=longSL, limit=longTP)
+    if longExit
+        strategy.close("Long", comment="Signal Exit")
+
+if strategy.position_size < 0
+    if enableTrail
+        strategy.exit("Short Exit", from_entry="Short",
+                       stop=shortSL, limit=shortTP,
+                       trail_points=trailPoints, trail_offset=trailPoints)
+    else
+        strategy.exit("Short Exit", from_entry="Short",
+                       stop=shortSL, limit=shortTP)
+    if shortExit
+        strategy.close("Short", comment="Signal Exit")
+
+// ============================================================================
+// SECTION 10: VISUAL ELEMENTS
+// ============================================================================
+
+// --- EMA Plots ---
+plot(showEmaFast  ? emaFast  : na, "EMA Fast",    color=color.new(color.green,  0), linewidth=1)
+plot(showEmaMed   ? emaMed   : na, "EMA Medium",  color=color.new(color.blue,   0), linewidth=1)
+plot(showEmaSlow  ? emaSlow  : na, "EMA Slow",    color=color.new(color.orange, 0), linewidth=2)
+plot(showEmaVSlow ? emaVSlow : na, "EMA V.Slow",  color=color.new(color.red,    0), linewidth=2)
+
+// --- Bollinger Bands ---
+pBBUpper = plot(showBB ? bbUpper : na, "BB Upper", color=color.new(color.gray, 50))
+pBBLower = plot(showBB ? bbLower : na, "BB Lower", color=color.new(color.gray, 50))
+plot(showBB ? bbBasis : na, "BB Basis", color=color.new(color.gray, 70))
+fill(pBBUpper, pBBLower, color=color.new(color.gray, 90), title="BB Fill")
+
+// --- VWAP ---
+plot(enableVWAP ? vwapValue : na, "VWAP", color=color.new(color.purple, 0), linewidth=2)
+
+// --- Support/Resistance ---
+plot(showSRLevels and not na(recentResistance) ? recentResistance : na, "Resistance",
+     color=color.new(color.red, 50), style=plot.style_circles, linewidth=2)
+plot(showSRLevels and not na(recentSupport) ? recentSupport : na, "Support",
+     color=color.new(color.green, 50), style=plot.style_circles, linewidth=2)
+
+// --- Buy/Sell Labels ---
+plotshape(showLabels and longEntry  ? low  : na, "Buy Signal",  style=shape.triangleup,
+          location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="BUY")
+plotshape(showLabels and shortEntry ? high : na, "Sell Signal", style=shape.triangledown,
+          location=location.abovebar, color=color.new(color.red, 0),   size=size.small, text="SELL")
+
+// --- Golden/Death Cross Labels ---
+plotshape(goldenCross, "Golden Cross", style=shape.diamond,
+          location=location.belowbar, color=color.new(color.lime, 0), size=size.normal, text="GC")
+plotshape(deathCross, "Death Cross", style=shape.diamond,
+          location=location.abovebar, color=color.new(color.maroon, 0), size=size.normal, text="DC")
+
+// --- Background Colors ---
+posColor = strategy.position_size > 0 ? color.new(color.green, 92) :
+           strategy.position_size < 0 ? color.new(color.red, 92) : na
+bgcolor(showBgColor ? posColor : na, title="Position Background")
+bgcolor(showBgColor and bbSqueeze ? color.new(color.yellow, 92) : na, title="BB Squeeze Background")
+
+// --- Stop Loss / Take Profit Lines ---
+plot(strategy.position_size > 0 ? longSL : na, "Long SL",  color=color.new(color.red,   0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size > 0 ? longTP : na, "Long TP",  color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size < 0 ? shortSL : na, "Short SL", color=color.new(color.red,   0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size < 0 ? shortTP : na, "Short TP", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
+
+// ============================================================================
+// SECTION 11: DASHBOARD TABLE
+// ============================================================================
+
+if showDashboard and barstate.islast
+    var table dashboard = table.new(position.top_right, 2, 12,
+                                     bgcolor=color.new(color.black, 30),
+                                     border_color=color.gray,
+                                     border_width=1,
+                                     frame_color=color.gray,
+                                     frame_width=1)
+
+    trendStr = bullishTrend ? "BULLISH" : bearishTrend ? "BEARISH" : "NEUTRAL"
+    trendClr = bullishTrend ? color.green : bearishTrend ? color.red : color.yellow
+
+    rsiStr = str.tostring(rsiValue, "#.0")
+    rsiStatus = rsiValue > rsiOB ? " (OB)" : rsiValue < rsiOS ? " (OS)" : ""
+    rsiClr = rsiValue > rsiOB ? color.red : rsiValue < rsiOS ? color.green : color.white
+
+    macdStr = macdLine > signalLine ? "BULLISH" : "BEARISH"
+    macdClr = macdLine > signalLine ? color.green : color.red
+
+    volStr = volumeAboveAvg ? "ABOVE AVG" : "BELOW AVG"
+    volClr = volumeAboveAvg ? color.green : color.gray
+
+    posStr = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    posClr = strategy.position_size > 0 ? color.green : strategy.position_size < 0 ? color.red : color.gray
+
+    scoreStr = useScoring ? str.tostring(longScore) + "L / " + str.tostring(shortScore) + "S" : "N/A (strict)"
+    scoreClr = longScore >= minLongScore ? color.green : shortScore >= minShortScore ? color.red : color.yellow
+
+    unrealizedPnL = strategy.openprofit
+    pnlStr = "$" + str.tostring(unrealizedPnL, "#.00")
+    pnlClr = unrealizedPnL >= 0 ? color.green : color.red
+
+    totalTrades = strategy.closedtrades
+    wins = strategy.wintrades
+    winRate = totalTrades > 0 ? wins / totalTrades * 100 : 0.0
+    winRateStr = str.tostring(winRate, "#.0") + "%"
+    winRateClr = winRate >= 50 ? color.green : color.red
+
+    grossProfit = strategy.grossprofit
+    grossLoss   = math.abs(strategy.grossloss)
+    profitFactor = grossLoss > 0 ? grossProfit / grossLoss : 0.0
+    pfStr = str.tostring(profitFactor, "#.00")
+    pfClr = profitFactor >= 1.5 ? color.green : profitFactor >= 1.0 ? color.yellow : color.red
+
+    // Headers
+    table.cell(dashboard, 0, 0, "METRIC",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.teal, 30))
+    table.cell(dashboard, 1, 0, "VALUE",   text_color=color.white, text_size=size.small, bgcolor=color.new(color.teal, 30))
+
+    // Row data
+    table.cell(dashboard, 0, 1,  "Trend",          text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 1,  trendStr,          text_color=trendClr,   text_size=size.tiny)
+
+    table.cell(dashboard, 0, 2,  "RSI",             text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 2,  rsiStr + rsiStatus,text_color=rsiClr,     text_size=size.tiny)
+
+    table.cell(dashboard, 0, 3,  "MACD",            text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 3,  macdStr,           text_color=macdClr,    text_size=size.tiny)
+
+    table.cell(dashboard, 0, 4,  "Volume",          text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 4,  volStr,            text_color=volClr,     text_size=size.tiny)
+
+    table.cell(dashboard, 0, 5,  "ATR",             text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 5,  str.tostring(atrValue, "#.00"), text_color=color.white, text_size=size.tiny)
+
+    table.cell(dashboard, 0, 6,  "Signal Score",    text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 6,  scoreStr,          text_color=scoreClr,   text_size=size.tiny)
+
+    table.cell(dashboard, 0, 7,  "Position",        text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 7,  posStr,            text_color=posClr,     text_size=size.tiny)
+
+    table.cell(dashboard, 0, 8,  "Unrealized P&L",  text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 8,  pnlStr,            text_color=pnlClr,    text_size=size.tiny)
+
+    table.cell(dashboard, 0, 9,  "Win Rate",        text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 9,  winRateStr,        text_color=winRateClr, text_size=size.tiny)
+
+    table.cell(dashboard, 0, 10, "Profit Factor",   text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 10, pfStr,             text_color=pfClr,      text_size=size.tiny)
+
+    table.cell(dashboard, 0, 11, "Total Trades",    text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, 11, str.tostring(totalTrades), text_color=color.white, text_size=size.tiny)
+
+// ============================================================================
+// SECTION 12: ALERTS
+// ============================================================================
+
+alertcondition(longEntry,     title="AMD Long Entry",    message="AMD: Long entry signal triggered")
+alertcondition(shortEntry,    title="AMD Short Entry",   message="AMD: Short entry signal triggered")
+alertcondition(longExit,      title="AMD Long Exit",     message="AMD: Exit long position")
+alertcondition(shortExit,     title="AMD Short Exit",    message="AMD: Exit short position")
+alertcondition(goldenCross,   title="AMD Golden Cross",  message="AMD: Golden Cross detected (EMA 50 > EMA 200)")
+alertcondition(deathCross,    title="AMD Death Cross",   message="AMD: Death Cross detected (EMA 50 < EMA 200)")
+alertcondition(volumeSpike,   title="AMD Volume Spike",  message="AMD: Unusual volume detected")
+alertcondition(bbSqueeze,     title="AMD BB Squeeze",    message="AMD: Bollinger Band squeeze — breakout imminent")
