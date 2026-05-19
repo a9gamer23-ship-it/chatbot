@@ -1,0 +1,328 @@
+// This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
+// https://mozilla.org/MPL/2.0/
+
+//@version=6
+strategy("AMD + Fibonacci ATR Strategy", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=2, initial_capital=10000, commission_type=strategy.commission.percent, commission_value=0.1)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// INPUTS
+// ──────────────────────────────────────────────────────────────────────────────
+
+// AMD Settings
+accumLen        = input.int(20,     "Accumulation Lookback",    minval=5,   maxval=100,  group="AMD Settings",  tooltip="Number of bars to detect the accumulation (consolidation) range")
+manipWickATR    = input.float(0.5,  "Manipulation Wick ATR",    minval=0.1, maxval=3.0,  step=0.1, group="AMD Settings",  tooltip="Minimum wick length as ATR multiple to qualify as a manipulation sweep")
+manipBodyPct    = input.float(50.0, "Manipulation Body %",      minval=10,  maxval=90,   step=5,   group="AMD Settings",  tooltip="Maximum body-to-range % for a manipulation bar (small body = sweep candle)")
+rangeATRFilter  = input.float(3.0,  "Range Max Width (ATR)",    minval=1.0, maxval=10.0, step=0.5, group="AMD Settings",  tooltip="Maximum accumulation range width in ATR multiples")
+confirmBars     = input.int(2,      "Distribution Confirm Bars", minval=1,  maxval=5,    group="AMD Settings",  tooltip="Bars of close back inside range to confirm distribution")
+
+// ATR Settings
+atrLen          = input.int(14,     "ATR Period",               minval=1,   maxval=50,   group="ATR Settings")
+atrSLMult       = input.float(1.5,  "Stop Loss ATR Multiple",   minval=0.5, maxval=5.0,  step=0.1, group="ATR Settings")
+atrTPMult       = input.float(2.5,  "Take Profit ATR Multiple", minval=1.0, maxval=10.0, step=0.1, group="ATR Settings")
+
+// Fibonacci Settings
+showFibs        = input.bool(true,  "Show Fibonacci Levels",    group="Fibonacci Settings")
+fibEntry        = input.float(0.618,"Fib Entry Level",          minval=0.0, maxval=1.0,  step=0.01,  group="Fibonacci Settings", tooltip="Fibonacci retracement level for entry refinement (0.618 = golden ratio)")
+fib382          = input.float(0.382,"Fib Level 38.2%",          minval=0.0, maxval=1.0,  step=0.001, group="Fibonacci Settings")
+fib500          = input.float(0.5,  "Fib Level 50%",            minval=0.0, maxval=1.0,  step=0.001, group="Fibonacci Settings")
+fib786          = input.float(0.786,"Fib Level 78.6%",          minval=0.0, maxval=1.0,  step=0.001, group="Fibonacci Settings")
+
+// Visual Settings
+showAccumZone   = input.bool(true,  "Show Accumulation Zone",   group="Visuals")
+showManipLabel  = input.bool(true,  "Show Manipulation Labels",  group="Visuals")
+showSLTP        = input.bool(true,  "Show SL/TP Lines",         group="Visuals")
+accumColor      = input.color(color.new(color.blue, 85),    "Accumulation Zone Color", group="Visuals")
+manipBullColor  = input.color(color.new(color.green, 70),   "Bullish Manipulation",    group="Visuals")
+manipBearColor  = input.color(color.new(color.red, 70),     "Bearish Manipulation",    group="Visuals")
+
+// Session Filter
+useSessionFilter = input.bool(false, "Use Session Filter",      group="Session Filter")
+sessionTime      = input.session("0800-1600", "Trading Session", group="Session Filter")
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CALCULATIONS
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ATR
+atrVal = ta.atr(atrLen)
+
+// Session filter
+inSession = useSessionFilter ? not na(time(timeframe.period, sessionTime)) : true
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ACCUMULATION DETECTION
+// Accumulation = tight range / consolidation zone
+// We find the highest high and lowest low over the lookback period
+// and check if the range is narrow relative to ATR
+// ──────────────────────────────────────────────────────────────────────────────
+
+accumHigh = ta.highest(high, accumLen)
+accumLow  = ta.lowest(low, accumLen)
+accumRange = accumHigh - accumLow
+isNarrowRange = accumRange <= atrVal * rangeATRFilter and accumRange > 0
+
+// Track whether we're in an accumulation phase
+var bool inAccumulation = false
+var float accumTop = na
+var float accumBot = na
+var int accumStart = na
+
+if isNarrowRange and not inAccumulation
+    inAccumulation := true
+    accumTop := accumHigh
+    accumBot := accumLow
+    accumStart := bar_index - accumLen
+
+if inAccumulation and isNarrowRange
+    accumTop := accumHigh
+    accumBot := accumLow
+
+if inAccumulation and not isNarrowRange
+    inAccumulation := false
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MANIPULATION DETECTION
+// Manipulation = false breakout / liquidity sweep beyond the accumulation range
+// Bearish manipulation (sweep above) → sets up a SHORT (distribution down)
+// Bullish manipulation (sweep below) → sets up a LONG  (distribution up)
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Bar properties
+barBody   = math.abs(close - open)
+barRange  = high - low
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+isSmallBody = barRange > 0 ? (barBody / barRange * 100) <= manipBodyPct : false
+
+// Sweep above accumulation range (bearish manipulation → short setup)
+sweepAbove = not na(accumTop) and high > accumTop and close < accumTop and upperWick >= atrVal * manipWickATR and isSmallBody
+
+// Sweep below accumulation range (bullish manipulation → long setup)
+sweepBelow = not na(accumBot) and low < accumBot and close > accumBot and lowerWick >= atrVal * manipWickATR and isSmallBody
+
+// ──────────────────────────────────────────────────────────────────────────────
+// FIBONACCI LEVELS
+// After manipulation, draw fibs from the manipulation extreme to
+// the opposite side of the accumulation range
+// ──────────────────────────────────────────────────────────────────────────────
+
+var float fibHigh   = na
+var float fibLow    = na
+var float fib382Val = na
+var float fib500Val = na
+var float fib618Val = na
+var float fib786Val = na
+var string fibDir   = na  // "long" or "short"
+
+// After bearish sweep (short setup): fibs from sweep high down to accumBot
+if sweepAbove
+    fibHigh   := high
+    fibLow    := accumBot
+    fibDir    := "short"
+    fib382Val := fibHigh - (fibHigh - fibLow) * fib382
+    fib500Val := fibHigh - (fibHigh - fibLow) * fib500
+    fib618Val := fibHigh - (fibHigh - fibLow) * fibEntry
+    fib786Val := fibHigh - (fibHigh - fibLow) * fib786
+
+// After bullish sweep (long setup): fibs from sweep low up to accumTop
+if sweepBelow
+    fibHigh   := accumTop
+    fibLow    := low
+    fibDir    := "long"
+    fib382Val := fibLow + (fibHigh - fibLow) * fib382
+    fib500Val := fibLow + (fibHigh - fibLow) * fib500
+    fib618Val := fibLow + (fibHigh - fibLow) * fibEntry
+    fib786Val := fibLow + (fibHigh - fibLow) * fib786
+
+// ──────────────────────────────────────────────────────────────────────────────
+// DISTRIBUTION / ENTRY SIGNALS
+// After manipulation, wait for price to retrace to Fibonacci zone
+// and confirm with close back inside the range (distribution begins)
+// ──────────────────────────────────────────────────────────────────────────────
+
+var int manipBar = na
+var bool pendingLong  = false
+var bool pendingShort = false
+
+// Register manipulation events
+if sweepBelow and inSession
+    pendingLong  := true
+    pendingShort := false
+    manipBar     := bar_index
+
+if sweepAbove and inSession
+    pendingShort := true
+    pendingLong  := false
+    manipBar     := bar_index
+
+// Expire pending signals after too many bars
+manipExpiry = 20
+if not na(manipBar) and bar_index - manipBar > manipExpiry
+    pendingLong  := false
+    pendingShort := false
+
+// ── LONG ENTRY ──
+// Price swept below, now retracing up through fib zone, confirming distribution
+longCondition = pendingLong and not na(fib618Val) and fibDir == "long"
+longFibTouch  = longCondition and low <= fib618Val and close > fib618Val
+longConfirm   = longFibTouch and close > accumBot
+
+// Check N consecutive closes inside range for confirmation
+longDistConfirm = longConfirm
+if confirmBars > 1 and longConfirm
+    for i = 1 to confirmBars - 1
+        if close[i] <= accumBot
+            longDistConfirm := false
+
+// ── SHORT ENTRY ──
+// Price swept above, now retracing down through fib zone, confirming distribution
+shortCondition = pendingShort and not na(fib618Val) and fibDir == "short"
+shortFibTouch  = shortCondition and high >= fib618Val and close < fib618Val
+shortConfirm   = shortFibTouch and close < accumTop
+
+shortDistConfirm = shortConfirm
+if confirmBars > 1 and shortConfirm
+    for i = 1 to confirmBars - 1
+        if close[i] >= accumTop
+            shortDistConfirm := false
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STOP LOSS & TAKE PROFIT (ATR-based)
+// ──────────────────────────────────────────────────────────────────────────────
+
+longSL  = close - atrVal * atrSLMult
+longTP  = close + atrVal * atrTPMult
+shortSL = close + atrVal * atrSLMult
+shortTP = close - atrVal * atrTPMult
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STRATEGY EXECUTION
+// ──────────────────────────────────────────────────────────────────────────────
+
+if longDistConfirm and strategy.position_size == 0
+    strategy.entry("Long AMD", strategy.long)
+    strategy.exit("Long Exit", "Long AMD", stop=longSL, limit=longTP)
+    pendingLong := false
+
+if shortDistConfirm and strategy.position_size == 0
+    strategy.entry("Short AMD", strategy.short)
+    strategy.exit("Short Exit", "Short AMD", stop=shortSL, limit=shortTP)
+    pendingShort := false
+
+// ──────────────────────────────────────────────────────────────────────────────
+// VISUALS
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Accumulation zone shading
+var box accumBox = na
+if showAccumZone and inAccumulation and not na(accumTop) and not na(accumBot)
+    if not na(accumBox)
+        box.delete(accumBox)
+    accumBox := box.new(left=bar_index - accumLen, top=accumTop, right=bar_index, bottom=accumBot, bgcolor=accumColor, border_color=color.blue, border_width=1)
+
+// Manipulation labels
+if showManipLabel and sweepAbove
+    label.new(bar_index, high, "🔻 MANIP\nSweep High", style=label.style_label_down, color=manipBearColor, textcolor=color.white, size=size.small)
+
+if showManipLabel and sweepBelow
+    label.new(bar_index, low, "🔺 MANIP\nSweep Low", style=label.style_label_up, color=manipBullColor, textcolor=color.white, size=size.small)
+
+// Entry labels
+if longDistConfirm and strategy.position_size == 0
+    label.new(bar_index, low, "▲ LONG\nAMD+Fib", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.normal)
+
+if shortDistConfirm and strategy.position_size == 0
+    label.new(bar_index, high, "▼ SHORT\nAMD+Fib", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.normal)
+
+// Fibonacci level lines (drawn on manipulation events)
+var line fibLine382 = na
+var line fibLine500 = na
+var line fibLine618 = na
+var line fibLine786 = na
+
+if showFibs and (sweepAbove or sweepBelow)
+    // Delete old lines
+    if not na(fibLine382)
+        line.delete(fibLine382)
+    if not na(fibLine500)
+        line.delete(fibLine500)
+    if not na(fibLine618)
+        line.delete(fibLine618)
+    if not na(fibLine786)
+        line.delete(fibLine786)
+
+    fibStart = bar_index
+    fibEnd   = bar_index + 20
+
+    fibLine382 := line.new(fibStart, fib382Val, fibEnd, fib382Val, color=color.orange, style=line.style_dashed, width=1)
+    fibLine500 := line.new(fibStart, fib500Val, fibEnd, fib500Val, color=color.yellow, style=line.style_dashed, width=1)
+    fibLine618 := line.new(fibStart, fib618Val, fibEnd, fib618Val, color=color.aqua,   style=line.style_solid,  width=2)
+    fibLine786 := line.new(fibStart, fib786Val, fibEnd, fib786Val, color=color.purple, style=line.style_dashed, width=1)
+
+    // Fib labels
+    label.new(fibEnd, fib382Val, "38.2%", style=label.style_none, textcolor=color.orange, size=size.tiny)
+    label.new(fibEnd, fib500Val, "50%",   style=label.style_none, textcolor=color.yellow, size=size.tiny)
+    label.new(fibEnd, fib618Val, "61.8%", style=label.style_none, textcolor=color.aqua,   size=size.tiny)
+    label.new(fibEnd, fib786Val, "78.6%", style=label.style_none, textcolor=color.purple, size=size.tiny)
+
+// SL/TP lines on entry
+var line slLine = na
+var line tpLine = na
+
+if showSLTP and longDistConfirm and strategy.position_size == 0
+    if not na(slLine)
+        line.delete(slLine)
+    if not na(tpLine)
+        line.delete(tpLine)
+    slLine := line.new(bar_index, longSL, bar_index + 15, longSL, color=color.red,   style=line.style_dotted, width=2)
+    tpLine := line.new(bar_index, longTP, bar_index + 15, longTP, color=color.green, style=line.style_dotted, width=2)
+    label.new(bar_index + 15, longSL, "SL", style=label.style_none, textcolor=color.red,   size=size.tiny)
+    label.new(bar_index + 15, longTP, "TP", style=label.style_none, textcolor=color.green, size=size.tiny)
+
+if showSLTP and shortDistConfirm and strategy.position_size == 0
+    if not na(slLine)
+        line.delete(slLine)
+    if not na(tpLine)
+        line.delete(tpLine)
+    slLine := line.new(bar_index, shortSL, bar_index + 15, shortSL, color=color.red,   style=line.style_dotted, width=2)
+    tpLine := line.new(bar_index, shortTP, bar_index + 15, shortTP, color=color.green, style=line.style_dotted, width=2)
+    label.new(bar_index + 15, shortSL, "SL", style=label.style_none, textcolor=color.red,   size=size.tiny)
+    label.new(bar_index + 15, shortTP, "TP", style=label.style_none, textcolor=color.green, size=size.tiny)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// INFO TABLE
+// ──────────────────────────────────────────────────────────────────────────────
+
+var table infoTable = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 80), border_width=1)
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, "AMD + Fib ATR",       text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, "",                     text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 0, 1, "ATR",                  text_color=color.gray,  text_size=size.tiny)
+    table.cell(infoTable, 1, 1, str.tostring(atrVal, "#.####"), text_color=color.yellow, text_size=size.tiny)
+    table.cell(infoTable, 0, 2, "Accum Range",          text_color=color.gray,  text_size=size.tiny)
+    table.cell(infoTable, 1, 2, str.tostring(accumRange, "#.####"), text_color=color.aqua, text_size=size.tiny)
+    table.cell(infoTable, 0, 3, "In Accumulation",      text_color=color.gray,  text_size=size.tiny)
+    table.cell(infoTable, 1, 3, inAccumulation ? "YES" : "NO", text_color=inAccumulation ? color.green : color.red, text_size=size.tiny)
+    table.cell(infoTable, 0, 4, "Pending Long",         text_color=color.gray,  text_size=size.tiny)
+    table.cell(infoTable, 1, 4, pendingLong ? "YES" : "NO", text_color=pendingLong ? color.green : color.gray, text_size=size.tiny)
+    table.cell(infoTable, 0, 5, "Pending Short",        text_color=color.gray,  text_size=size.tiny)
+    table.cell(infoTable, 1, 5, pendingShort ? "YES" : "NO", text_color=pendingShort ? color.red : color.gray, text_size=size.tiny)
+    table.cell(infoTable, 0, 6, "Fib 61.8%",            text_color=color.gray,  text_size=size.tiny)
+    table.cell(infoTable, 1, 6, not na(fib618Val) ? str.tostring(fib618Val, "#.####") : "—", text_color=color.aqua, text_size=size.tiny)
+    table.cell(infoTable, 0, 7, "Position",             text_color=color.gray,  text_size=size.tiny)
+    table.cell(infoTable, 1, 7, strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT", text_color=strategy.position_size > 0 ? color.green : strategy.position_size < 0 ? color.red : color.gray, text_size=size.tiny)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ALERTS
+// ──────────────────────────────────────────────────────────────────────────────
+
+alertcondition(sweepBelow,       title="Bullish Manipulation",   message="AMD: Bullish manipulation sweep detected (sweep below accumulation range)")
+alertcondition(sweepAbove,       title="Bearish Manipulation",   message="AMD: Bearish manipulation sweep detected (sweep above accumulation range)")
+alertcondition(longDistConfirm,  title="Long Entry Signal",      message="AMD+Fib: Long entry — distribution phase confirmed at Fibonacci level")
+alertcondition(shortDistConfirm, title="Short Entry Signal",     message="AMD+Fib: Short entry — distribution phase confirmed at Fibonacci level")
+alertcondition(inAccumulation and not inAccumulation[1], title="Accumulation Start", message="AMD: Accumulation phase detected — price entering consolidation range")
+
+// ──────────────────────────────────────────────────────────────────────────────
+// END
+// ──────────────────────────────────────────────────────────────────────────────
