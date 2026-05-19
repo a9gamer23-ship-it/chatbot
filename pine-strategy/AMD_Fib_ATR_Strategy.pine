@@ -145,14 +145,16 @@ var bool pendingLong  = false
 var bool pendingShort = false
 
 // Register manipulation events
-if sweepBelow and inSession
-    pendingLong  := true
-    pendingShort := false
-    manipBar     := bar_index
-
+// Order matches the Fibonacci section: sweepAbove first, sweepBelow second
+// so that when both fire on the same bar, the last-wins result is consistent
 if sweepAbove and inSession
     pendingShort := true
     pendingLong  := false
+    manipBar     := bar_index
+
+if sweepBelow and inSession
+    pendingLong  := true
+    pendingShort := false
     manipBar     := bar_index
 
 // Expire pending signals after too many bars
