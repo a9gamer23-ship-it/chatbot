@@ -1,253 +1,377 @@
 // This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0
 // https://mozilla.org/MPL/2.0/
-// © Volume Profile Indicator — inspired by Trader Dale's POC trading methodology
+// © Volume Profile Indicator
+// Inspired by Trader Dale's TradingView Volume Profile Comparison
+// Ref: https://youtu.be/pJIDYtCF1Gw
+//
+// Combines Session VP, Periodic VP (Weekly/Monthly/4H), and
+// Visible-Range VP into a single free indicator with POC,
+// Value Area, up/down delta colouring, and alerts.
 
 //@version=5
-indicator("Volume Profile [POC + Value Area]", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+indicator("Volume Profile [Trader Dale Style]", shorttitle="VP-TD", overlay=true,
+     max_boxes_count=500, max_lines_count=500, max_labels_count=500)
 
 // ──────────────────────────────────────────────────────────────────
-//  INPUTS
+//  INPUTS — Profile Settings
 // ──────────────────────────────────────────────────────────────────
 
-grpProfile  = "Volume Profile Settings"
-numRows     = input.int(24, "Number of Rows", minval=10, maxval=100, group=grpProfile, tooltip="Higher values give finer granularity but may impact performance.")
-vpPeriod    = input.string("Session", "Profile Period", options=["Session", "Weekly", "Monthly", "Custom Bars"], group=grpProfile)
-customBars  = input.int(20, "Custom Lookback Bars", minval=5, maxval=500, group=grpProfile, tooltip="Used when Profile Period is 'Custom Bars'.")
-vaPercent   = input.float(70.0, "Value Area %", minval=50.0, maxval=95.0, step=1.0, group=grpProfile, tooltip="Percentage of total volume considered the Value Area (typically 70%).")
-maxSessions = input.int(5, "Max Visible Sessions", minval=1, maxval=20, group=grpProfile, tooltip="Number of historical sessions to display.")
+grpProfile  = "Profile Settings"
+vpMode      = input.string("Session", "Profile Mode",
+     options=["Session", "Periodic", "Visible Range", "Fixed Range"],
+     group=grpProfile,
+     tooltip="Session = daily profiles.\nPeriodic = weekly / monthly / custom-hour blocks.\nVisible Range = single profile over last N bars.\nFixed Range = profile over a user-defined bar count.")
+periodicTF  = input.string("1W", "Periodic Timeframe",
+     options=["4H", "1D", "1W", "1M"],
+     group=grpProfile,
+     tooltip="Only used when Profile Mode = Periodic.")
+lookbackBars = input.int(200, "Lookback Bars",
+     minval=20, maxval=5000,
+     group=grpProfile,
+     tooltip="Bar count for Visible Range / Fixed Range modes.")
+numRows     = input.int(24, "Number of Rows",
+     minval=10, maxval=100,
+     group=grpProfile,
+     tooltip="More rows = finer detail but slower rendering.")
+vaPercent   = input.float(70.0, "Value Area %",
+     minval=50.0, maxval=95.0, step=1.0,
+     group=grpProfile,
+     tooltip="Percentage of total volume inside the Value Area (Trader Dale uses 70%).")
+maxProfiles = input.int(5, "Max Visible Profiles",
+     minval=1, maxval=20,
+     group=grpProfile,
+     tooltip="Number of historical profiles to keep on the chart.")
+
+// ──────────────────────────────────────────────────────────────────
+//  INPUTS — Style
+// ──────────────────────────────────────────────────────────────────
 
 grpStyle    = "Style"
-pocColor    = input.color(color.red, "POC Color", group=grpStyle)
+pocColor    = input.color(#000000, "POC Color", group=grpStyle)
 pocWidth    = input.int(2, "POC Line Width", minval=1, maxval=5, group=grpStyle)
-vaColor     = input.color(color.new(color.orange, 60), "Value Area Color", group=grpStyle)
-nonVaColor  = input.color(color.new(color.gray, 75), "Non-Value Area Color", group=grpStyle)
-upVolColor  = input.color(color.new(color.teal, 40), "Up Volume Color", group=grpStyle)
-dnVolColor  = input.color(color.new(color.red, 40), "Down Volume Color", group=grpStyle)
-showVAHL    = input.bool(true, "Show VA High / Low Lines", group=grpStyle)
-vahColor    = input.color(color.new(color.green, 30), "VA High Line Color", group=grpStyle)
-valColorIn  = input.color(color.new(color.green, 30), "VA Low Line Color", group=grpStyle)
-showPOCext  = input.bool(true, "Extend POC Into Current Session", group=grpStyle)
-showLabels  = input.bool(true, "Show POC / VAH / VAL Labels", group=grpStyle)
-profileSide = input.string("Right", "Histogram Side", options=["Left", "Right"], group=grpStyle, tooltip="Draw histogram bars on the left or right side of the session range.")
+showPOCext  = input.bool(true, "Extend POC into next period", group=grpStyle)
+
+vaBoxColor  = input.color(color.new(#2196F3, 55), "Value Area Fill", group=grpStyle)
+nonVaColor  = input.color(color.new(#9E9E9E, 75), "Non-Value Area Fill", group=grpStyle)
+
+upVolColor  = input.color(color.new(#26A69A, 35), "Up Volume Color", group=grpStyle)
+dnVolColor  = input.color(color.new(#EF5350, 35), "Down Volume Color", group=grpStyle)
+showDelta   = input.bool(true, "Color bars by Up/Down volume", group=grpStyle)
+
+showVAHL    = input.bool(true, "Show VAH / VAL lines", group=grpStyle)
+vahColor    = input.color(color.new(#FF9800, 30), "VAH Line Color", group=grpStyle)
+valColor    = input.color(color.new(#FF9800, 30), "VAL Line Color", group=grpStyle)
+
+showLabels  = input.bool(true, "Show POC / VAH / VAL labels", group=grpStyle)
+profileSide = input.string("Right", "Histogram Side",
+     options=["Left", "Right"], group=grpStyle)
+
+// ──────────────────────────────────────────────────────────────────
+//  INPUTS — Developing Profile (current period)
+// ──────────────────────────────────────────────────────────────────
+
+grpDev      = "Developing Profile"
+showDevPOC  = input.bool(true, "Show Developing POC", group=grpDev)
+devPOCcolor = input.color(color.new(#000000, 40), "Developing POC Color", group=grpDev)
+
+// ──────────────────────────────────────────────────────────────────
+//  INPUTS — Alerts
+// ──────────────────────────────────────────────────────────────────
 
 grpAlerts   = "Alerts"
 alertPOC    = input.bool(true, "Alert on POC Touch", group=grpAlerts)
-alertVAH    = input.bool(true, "Alert on VA High Breakout", group=grpAlerts)
-alertVAL    = input.bool(true, "Alert on VA Low Breakdown", group=grpAlerts)
+alertVAH    = input.bool(true, "Alert on VAH Breakout", group=grpAlerts)
+alertVAL    = input.bool(true, "Alert on VAL Breakdown", group=grpAlerts)
 
 // ──────────────────────────────────────────────────────────────────
-//  SESSION / PERIOD DETECTION
+//  PERIOD DETECTION
 // ──────────────────────────────────────────────────────────────────
 
-isNewPeriod() =>
-    switch vpPeriod
-        "Session"     => ta.change(time("D")) != 0
-        "Weekly"      => ta.change(time("W")) != 0
-        "Monthly"     => ta.change(time("M")) != 0
-        "Custom Bars" => bar_index % customBars == 0
+detectNewPeriod() =>
+    switch vpMode
+        "Session"  => ta.change(time("D")) != 0
+        "Periodic" =>
+            switch periodicTF
+                "4H" => ta.change(time("240")) != 0
+                "1D" => ta.change(time("D"))   != 0
+                "1W" => ta.change(time("W"))   != 0
+                "1M" => ta.change(time("M"))   != 0
+                => false
+        "Fixed Range"   => bar_index % lookbackBars == 0
+        "Visible Range" => false
+        => false
 
-newPeriod = isNewPeriod()
+newPeriod = detectNewPeriod()
 
-// ──────────────────────────────────────────────────────────────────
-//  DATA STRUCTURES
-// ──────────────────────────────────────────────────────────────────
-
-var float[] rowVolume    = array.new_float(numRows, 0.0)
-var float[] rowUpVol     = array.new_float(numRows, 0.0)
-var float[] rowDnVol     = array.new_float(numRows, 0.0)
-var float   sessionHigh  = high
-var float   sessionLow   = low
-var int     sessionStart = bar_index
-var float   pocLevel     = na
-var float   vahLevel     = na
-var float   valLevel     = na
-
-var box[]   vpBoxes      = array.new_box()
-var line[]  vpLines      = array.new_line()
-var label[] vpLabels     = array.new_label()
-var int     sessionCount = 0
+// For Visible Range mode we only compute once on the last bar.
+isVisibleRange = vpMode == "Visible Range"
 
 // ──────────────────────────────────────────────────────────────────
-//  CLEANUP — remove oldest session visuals when limit exceeded
+//  STATE
 // ──────────────────────────────────────────────────────────────────
 
-cleanupOldVisuals() =>
-    while array.size(vpBoxes) > maxSessions * (numRows + 5)
+var float[] rowVol    = array.new_float(numRows, 0.0)
+var float[] rowUp     = array.new_float(numRows, 0.0)
+var float[] rowDn     = array.new_float(numRows, 0.0)
+var float   pHigh     = high
+var float   pLow      = low
+var int     pStart    = bar_index
+var float   lastPOC   = na
+var float   lastVAH   = na
+var float   lastVAL   = na
+
+var box[]   vpBoxes   = array.new_box()
+var line[]  vpLines   = array.new_line()
+var label[] vpLabels  = array.new_label()
+
+// ──────────────────────────────────────────────────────────────────
+//  CLEANUP
+// ──────────────────────────────────────────────────────────────────
+
+cleanUp() =>
+    while array.size(vpBoxes) > maxProfiles * (numRows + 6)
         box.delete(array.shift(vpBoxes))
-    while array.size(vpLines) > maxSessions * 5
+    while array.size(vpLines) > maxProfiles * 6
         line.delete(array.shift(vpLines))
-    while array.size(vpLabels) > maxSessions * 5
+    while array.size(vpLabels) > maxProfiles * 6
         label.delete(array.shift(vpLabels))
 
 // ──────────────────────────────────────────────────────────────────
-//  DRAW PROFILE FOR COMPLETED SESSION
+//  CORE — Draw a volume profile between pStart..pEnd
 // ──────────────────────────────────────────────────────────────────
 
-drawProfile(float pHigh, float pLow, int pStart, int pEnd, float[] volArr, float[] upArr, float[] dnArr) =>
-    float rowHeight  = (pHigh - pLow) / numRows
-    float totalVol   = 0.0
-    float maxVol     = 0.0
-    int   pocIdx     = 0
+drawProfile(float _high, float _low, int _start, int _end,
+     float[] _vol, float[] _up, float[] _dn) =>
 
+    float rowH    = (_high - _low) / numRows
+    float totVol  = 0.0
+    float maxVol  = 0.0
+    int   pocIdx  = 0
+
+    // --- Find POC and totals ---
     for i = 0 to numRows - 1
-        float rv = array.get(volArr, i)
-        totalVol += rv
-        if rv > maxVol
-            maxVol := rv
+        float v = array.get(_vol, i)
+        totVol += v
+        if v > maxVol
+            maxVol := v
             pocIdx := i
 
-    float pocPrice = pLow + (pocIdx + 0.5) * rowHeight
+    float _pocPrice = _low + (pocIdx + 0.5) * rowH
 
-    // --- Value Area calculation ---
-    float vaTarget     = totalVol * vaPercent / 100.0
-    float cumulativeVA = array.get(volArr, pocIdx)
-    int   upperIdx     = pocIdx
-    int   lowerIdx     = pocIdx
+    // --- Value Area (expand from POC outward) ---
+    float vaTarget = totVol * vaPercent / 100.0
+    float cumVA    = array.get(_vol, pocIdx)
+    int   upIdx    = pocIdx
+    int   dnIdx    = pocIdx
 
-    while cumulativeVA < vaTarget and (upperIdx < numRows - 1 or lowerIdx > 0)
-        float aboveVol = upperIdx < numRows - 1 ? array.get(volArr, upperIdx + 1) : 0.0
-        float belowVol = lowerIdx > 0 ? array.get(volArr, lowerIdx - 1) : 0.0
-        if aboveVol >= belowVol
-            if upperIdx < numRows - 1
-                upperIdx += 1
-                cumulativeVA += aboveVol
+    while cumVA < vaTarget and (upIdx < numRows - 1 or dnIdx > 0)
+        float aboveV = upIdx < numRows - 1 ? array.get(_vol, upIdx + 1) : 0.0
+        float belowV = dnIdx > 0            ? array.get(_vol, dnIdx - 1) : 0.0
+        if aboveV >= belowV
+            if upIdx < numRows - 1
+                upIdx += 1
+                cumVA += aboveV
         else
-            if lowerIdx > 0
-                lowerIdx -= 1
-                cumulativeVA += belowVol
+            if dnIdx > 0
+                dnIdx -= 1
+                cumVA += belowV
 
-    float vahPrice = pLow + (upperIdx + 1) * rowHeight
-    float valPrice = pLow + lowerIdx * rowHeight
+    float _vahPrice = _low + (upIdx + 1) * rowH
+    float _valPrice = _low + dnIdx * rowH
 
-    // --- Histogram width scaling ---
-    int barSpan = math.max(pEnd - pStart, 1)
-    float maxBarWidth = barSpan * 0.4
+    // --- Histogram bar width scaling ---
+    int   span     = math.max(_end - _start, 1)
+    float maxW     = span * 0.45
 
     // --- Draw volume boxes ---
     for i = 0 to numRows - 1
-        float rv       = array.get(volArr, i)
-        float upV      = array.get(upArr, i)
-        float dnV      = array.get(dnArr, i)
-        float rowBot   = pLow + i * rowHeight
-        float rowTop   = rowBot + rowHeight
-        float barWidth = maxVol > 0 ? (rv / maxVol) * maxBarWidth : 0
+        float v   = array.get(_vol, i)
+        if v > 0
+            float uv  = array.get(_up, i)
+            float dv  = array.get(_dn, i)
+            float bot = _low + i * rowH
+            float top = bot + rowH
+            float w   = maxVol > 0 ? (v / maxVol) * maxW : 0
 
-        bool inVA      = i >= lowerIdx and i <= upperIdx
-        color boxClr   = inVA ? vaColor : nonVaColor
+            bool inVA = i >= dnIdx and i <= upIdx
 
-        if rv > 0
-            if upV >= dnV
-                boxClr := upVolColor
-            else
-                boxClr := dnVolColor
-            if inVA
-                boxClr := color.new(boxClr, math.max(color.t(boxClr) - 20, 0))
+            color clr = inVA ? vaBoxColor : nonVaColor
+            if showDelta
+                clr := uv >= dv ? upVolColor : dnVolColor
+                if inVA
+                    clr := color.new(clr, math.max(color.t(clr) - 15, 0))
 
-        int bLeft  = profileSide == "Right" ? int(pEnd - barWidth) : pStart
-        int bRight = profileSide == "Right" ? pEnd : int(pStart + barWidth)
+            int bL = profileSide == "Right" ? int(_end - w) : _start
+            int bR = profileSide == "Right" ? _end          : int(_start + w)
 
-        if rv > 0
-            array.push(vpBoxes, box.new(bLeft, rowTop, bRight, rowBot, border_color=color.new(boxClr, 80), bgcolor=boxClr, border_width=0))
+            array.push(vpBoxes, box.new(bL, top, bR, bot,
+                 border_color=color.new(clr, 85), bgcolor=clr, border_width=0))
 
     // --- POC line ---
-    lineStyle = line.style_solid
-    array.push(vpLines, line.new(pStart, pocPrice, pEnd, pocPrice, color=pocColor, width=pocWidth, style=lineStyle))
+    array.push(vpLines, line.new(_start, _pocPrice, _end, _pocPrice,
+         color=pocColor, width=pocWidth, style=line.style_solid))
 
     if showPOCext
-        array.push(vpLines, line.new(pEnd, pocPrice, pEnd + barSpan, pocPrice, color=color.new(pocColor, 50), width=1, style=line.style_dashed))
+        array.push(vpLines, line.new(_end, _pocPrice, _end + span, _pocPrice,
+             color=color.new(pocColor, 60), width=1, style=line.style_dashed))
 
-    // --- VA High / Low lines ---
+    // --- VAH / VAL lines ---
     if showVAHL
-        array.push(vpLines, line.new(pStart, vahPrice, pEnd, vahPrice, color=vahColor, width=1, style=line.style_dashed))
-        array.push(vpLines, line.new(pStart, valPrice, pEnd, valPrice, color=valColorIn, width=1, style=line.style_dashed))
+        array.push(vpLines, line.new(_start, _vahPrice, _end, _vahPrice,
+             color=vahColor, width=1, style=line.style_dashed))
+        array.push(vpLines, line.new(_start, _valPrice, _end, _valPrice,
+             color=valColor, width=1, style=line.style_dashed))
 
     // --- Labels ---
     if showLabels
-        array.push(vpLabels, label.new(pEnd, pocPrice, "POC " + str.tostring(pocPrice, format.mintick), style=label.style_label_left, color=color.new(pocColor, 80), textcolor=pocColor, size=size.small))
+        array.push(vpLabels, label.new(_end, _pocPrice,
+             "POC " + str.tostring(_pocPrice, format.mintick),
+             style=label.style_label_left,
+             color=color.new(pocColor, 85), textcolor=pocColor, size=size.small))
         if showVAHL
-            array.push(vpLabels, label.new(pEnd, vahPrice, "VAH " + str.tostring(vahPrice, format.mintick), style=label.style_label_left, color=color.new(vahColor, 80), textcolor=vahColor, size=size.tiny))
-            array.push(vpLabels, label.new(pEnd, valPrice, "VAL " + str.tostring(valPrice, format.mintick), style=label.style_label_left, color=color.new(valColorIn, 80), textcolor=valColorIn, size=size.tiny))
+            array.push(vpLabels, label.new(_end, _vahPrice,
+                 "VAH " + str.tostring(_vahPrice, format.mintick),
+                 style=label.style_label_left,
+                 color=color.new(vahColor, 85), textcolor=vahColor, size=size.tiny))
+            array.push(vpLabels, label.new(_end, _valPrice,
+                 "VAL " + str.tostring(_valPrice, format.mintick),
+                 style=label.style_label_left,
+                 color=color.new(valColor, 85), textcolor=valColor, size=size.tiny))
 
-    [pocPrice, vahPrice, valPrice]
-
-// ──────────────────────────────────────────────────────────────────
-//  MAIN LOGIC
-// ──────────────────────────────────────────────────────────────────
-
-if newPeriod and bar_index > 0
-    sessionEnd = bar_index - 1
-    if sessionStart < sessionEnd
-        [poc, vah, val] = drawProfile(sessionHigh, sessionLow, sessionStart, sessionEnd, rowVolume, rowUpVol, rowDnVol)
-        pocLevel := poc
-        vahLevel := vah
-        valLevel := val
-        sessionCount += 1
-        cleanupOldVisuals()
-
-    // Reset for new session
-    array.fill(rowVolume, 0.0)
-    array.fill(rowUpVol, 0.0)
-    array.fill(rowDnVol, 0.0)
-    sessionHigh  := high
-    sessionLow   := low
-    sessionStart := bar_index
-
-// Update session high/low
-sessionHigh := math.max(sessionHigh, high)
-sessionLow  := math.min(sessionLow, low)
-
-// Accumulate volume into rows
-float range = sessionHigh - sessionLow
-if range > 0
-    float rowSize  = range / numRows
-    int   rowIdx   = math.min(math.floor((close - sessionLow) / rowSize), numRows - 1)
-    if rowIdx >= 0 and rowIdx < numRows
-        array.set(rowVolume, rowIdx, array.get(rowVolume, rowIdx) + volume)
-        if close >= open
-            array.set(rowUpVol, rowIdx, array.get(rowUpVol, rowIdx) + volume)
-        else
-            array.set(rowDnVol, rowIdx, array.get(rowDnVol, rowIdx) + volume)
+    [_pocPrice, _vahPrice, _valPrice]
 
 // ──────────────────────────────────────────────────────────────────
-//  DEVELOPING POC (current session, plotted as a simple line)
+//  SESSION / PERIODIC / FIXED RANGE  — accumulate & draw on period change
 // ──────────────────────────────────────────────────────────────────
 
-float devMaxVol  = 0.0
-int   devPocIdx  = 0
-for i = 0 to numRows - 1
-    float rv = array.get(rowVolume, i)
-    if rv > devMaxVol
-        devMaxVol := rv
-        devPocIdx := i
+if not isVisibleRange
+    if newPeriod and bar_index > 0
+        pEnd = bar_index - 1
+        if pStart < pEnd
+            [poc, vah, val] = drawProfile(pHigh, pLow, pStart, pEnd, rowVol, rowUp, rowDn)
+            lastPOC := poc
+            lastVAH := vah
+            lastVAL := val
+            cleanUp()
 
-float devRowSize = range > 0 ? (sessionHigh - sessionLow) / numRows : 0.0
-float devPOC     = range > 0 ? sessionLow + (devPocIdx + 0.5) * devRowSize : na
+        array.fill(rowVol, 0.0)
+        array.fill(rowUp,  0.0)
+        array.fill(rowDn,  0.0)
+        pHigh  := high
+        pLow   := low
+        pStart := bar_index
 
-plot(devPOC, "Developing POC", color=color.new(pocColor, 30), style=plot.style_circles, linewidth=1)
+    // Track running high/low
+    pHigh := math.max(pHigh, high)
+    pLow  := math.min(pLow, low)
+
+    // Accumulate volume into rows
+    float range = pHigh - pLow
+    if range > 0
+        float rowSz = range / numRows
+        int   idx   = math.min(math.floor((close - pLow) / rowSz), numRows - 1)
+        if idx >= 0 and idx < numRows
+            array.set(rowVol, idx, array.get(rowVol, idx) + volume)
+            if close >= open
+                array.set(rowUp, idx, array.get(rowUp, idx) + volume)
+            else
+                array.set(rowDn, idx, array.get(rowDn, idx) + volume)
+
+// ──────────────────────────────────────────────────────────────────
+//  VISIBLE RANGE — computed once on the last bar
+// ──────────────────────────────────────────────────────────────────
+
+if isVisibleRange and barstate.islast
+    vrVol  = array.new_float(numRows, 0.0)
+    vrUp   = array.new_float(numRows, 0.0)
+    vrDn   = array.new_float(numRows, 0.0)
+    int lb = math.min(lookbackBars, bar_index)
+    float vrHigh = ta.highest(high, lb)
+    float vrLow  = ta.lowest(low, lb)
+    float vrRange = vrHigh - vrLow
+
+    if vrRange > 0
+        float vrRow = vrRange / numRows
+        for i = 0 to lb - 1
+            float c = close[i]
+            float o = open[i]
+            float v = volume[i]
+            int ri  = math.min(math.floor((c - vrLow) / vrRow), numRows - 1)
+            if ri >= 0 and ri < numRows
+                array.set(vrVol, ri, array.get(vrVol, ri) + v)
+                if c >= o
+                    array.set(vrUp, ri, array.get(vrUp, ri) + v)
+                else
+                    array.set(vrDn, ri, array.get(vrDn, ri) + v)
+
+        [poc, vah, val] = drawProfile(vrHigh, vrLow, bar_index - lb, bar_index, vrVol, vrUp, vrDn)
+        lastPOC := poc
+        lastVAH := vah
+        lastVAL := val
+
+// ──────────────────────────────────────────────────────────────────
+//  DEVELOPING POC (current incomplete period, Session/Periodic/Fixed)
+// ──────────────────────────────────────────────────────────────────
+
+float devPOC = na
+if not isVisibleRange and showDevPOC
+    float dMax = 0.0
+    int   dIdx = 0
+    for i = 0 to numRows - 1
+        float v = array.get(rowVol, i)
+        if v > dMax
+            dMax := v
+            dIdx := i
+    float dRange = pHigh - pLow
+    devPOC := dRange > 0 ? pLow + (dIdx + 0.5) * (dRange / numRows) : na
+
+plot(devPOC, "Developing POC", color=devPOCcolor, style=plot.style_circles, linewidth=2)
 
 // ──────────────────────────────────────────────────────────────────
 //  ALERTS
 // ──────────────────────────────────────────────────────────────────
 
-bool touchedPOC = not na(pocLevel) and math.abs(close - pocLevel) <= (syminfo.mintick * 5)
-bool brokeVAH   = not na(vahLevel) and close > vahLevel and close[1] <= vahLevel
-bool brokeVAL   = not na(valLevel) and close < valLevel and close[1] >= valLevel
+bool touchedPOC = not na(lastPOC) and math.abs(close - lastPOC) <= syminfo.mintick * 5
+bool brokeVAH   = not na(lastVAH) and close > lastVAH and close[1] <= lastVAH
+bool brokeVAL   = not na(lastVAL) and close < lastVAL and close[1] >= lastVAL
 
-alertcondition(alertPOC and touchedPOC, title="POC Touch", message="Price touched the Point of Control ({{ticker}} @ {{close}})")
-alertcondition(alertVAH and brokeVAH, title="VA High Breakout", message="Price broke above Value Area High ({{ticker}} @ {{close}})")
-alertcondition(alertVAL and brokeVAL, title="VA Low Breakdown", message="Price broke below Value Area Low ({{ticker}} @ {{close}})")
+alertcondition(alertPOC and touchedPOC,
+     title="POC Touch",
+     message="Price touched POC ({{ticker}} @ {{close}})")
+alertcondition(alertVAH and brokeVAH,
+     title="VAH Breakout",
+     message="Price broke above VAH ({{ticker}} @ {{close}})")
+alertcondition(alertVAL and brokeVAL,
+     title="VAL Breakdown",
+     message="Price broke below VAL ({{ticker}} @ {{close}})")
 
 // ──────────────────────────────────────────────────────────────────
 //  INFO TABLE
 // ──────────────────────────────────────────────────────────────────
 
-var table infoTbl = table.new(position.top_right, 2, 4, bgcolor=color.new(color.black, 85), border_width=1)
+var table tbl = table.new(position.top_right, 2, 5, bgcolor=color.new(#000000, 85), border_width=1)
 if barstate.islast
-    table.cell(infoTbl, 0, 0, "POC",  text_color=color.white, text_size=size.small)
-    table.cell(infoTbl, 1, 0, str.tostring(devPOC, format.mintick), text_color=pocColor, text_size=size.small)
-    table.cell(infoTbl, 0, 1, "VAH",  text_color=color.white, text_size=size.small)
-    table.cell(infoTbl, 1, 1, not na(vahLevel) ? str.tostring(vahLevel, format.mintick) : "—", text_color=vahColor, text_size=size.small)
-    table.cell(infoTbl, 0, 2, "VAL",  text_color=color.white, text_size=size.small)
-    table.cell(infoTbl, 1, 2, not na(valLevel) ? str.tostring(valLevel, format.mintick) : "—", text_color=valColorIn, text_size=size.small)
-    table.cell(infoTbl, 0, 3, "VA %", text_color=color.white, text_size=size.small)
-    table.cell(infoTbl, 1, 3, str.tostring(vaPercent, "#.0") + "%", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 0, 0, "Mode", text_color=color.white, text_size=size.small)
+    string modeLabel = vpMode
+    if vpMode == "Periodic"
+        modeLabel := "Periodic (" + periodicTF + ")"
+    if vpMode == "Visible Range" or vpMode == "Fixed Range"
+        modeLabel := vpMode + " (" + str.tostring(lookbackBars) + ")"
+    table.cell(tbl, 1, 0, modeLabel, text_color=#2196F3, text_size=size.small)
+
+    table.cell(tbl, 0, 1, "POC",  text_color=color.white, text_size=size.small)
+    float dispPOC = not na(devPOC) ? devPOC : lastPOC
+    table.cell(tbl, 1, 1, not na(dispPOC) ? str.tostring(dispPOC, format.mintick) : "—",
+         text_color=pocColor, text_size=size.small)
+
+    table.cell(tbl, 0, 2, "VAH", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 2, not na(lastVAH) ? str.tostring(lastVAH, format.mintick) : "—",
+         text_color=vahColor, text_size=size.small)
+
+    table.cell(tbl, 0, 3, "VAL", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 3, not na(lastVAL) ? str.tostring(lastVAL, format.mintick) : "—",
+         text_color=valColor, text_size=size.small)
+
+    table.cell(tbl, 0, 4, "VA %", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 4, str.tostring(vaPercent, "#.0") + "%",
+         text_color=color.white, text_size=size.small)
