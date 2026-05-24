@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "SMC Ultimate EA"
 #property link      ""
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 #property description "10-Strategy Smart Money Concepts EA with graphical objects"
 
@@ -108,6 +108,7 @@ input color           InpSweepBullColor    = clrLime;        // SSL Sweep Color
 input color           InpSweepBearColor    = clrRed;         // BSL Sweep Color
 input color           InpBreakerBullColor  = clrGreen;       // Bullish Breaker Color
 input color           InpBreakerBearColor  = clrDarkRed;     // Bearish Breaker Color
+input color           InpIDMColor          = clrDodgerBlue;  // IDM Level Color
 input color           InpAsiaColor         = clrMediumPurple; // Asia Session Color
 input color           InpLondonColor       = clrMediumAquamarine; // London Session Color
 input color           InpNYColor           = clrIndianRed;    // New York Session Color
@@ -127,7 +128,7 @@ input int             InpTrailATR_Period   = 14;              // Trailing Stop A
 #define BULLISH   1
 #define BEARISH  -1
 #define NEUTRAL   0
-#define PREFIX    "SMC_EA_"
+#define PREFIX    "SMC_"
 #define BULLISH_LEG 1
 #define BEARISH_LEG 0
 
@@ -151,7 +152,8 @@ struct OrderBlock
    int      bias;
    bool     valid;
    bool     touched;
-   string   objName;
+   string   boxName;
+   string   lblName;
 };
 
 struct FairValueGap
@@ -162,7 +164,8 @@ struct FairValueGap
    datetime barTime;
    bool     valid;
    bool     mitigated;
-   string   objName;
+   string   boxName;
+   string   lblName;
 };
 
 struct BreakerBlock
@@ -174,7 +177,8 @@ struct BreakerBlock
    bool     isBreaker;
    bool     mitigated;
    bool     valid;
-   string   objName;
+   string   boxName;
+   string   lblName;
 };
 
 struct EqualLevel
@@ -184,7 +188,8 @@ struct EqualLevel
    datetime time2;
    int      touchCount;
    bool     valid;
-   string   objName;
+   string   lineName;
+   string   lblName;
 };
 
 struct SessionState
@@ -193,7 +198,12 @@ struct SessionState
    double   high;
    double   low;
    datetime startTime;
-   string   objName;
+   string   boxName;
+   string   lblName;
+   string   highLineName;
+   string   lowLineName;
+   string   highLblName;
+   string   lowLblName;
 };
 
 struct TrailingExtremes
@@ -239,39 +249,24 @@ CTrade         g_trade;
 CPositionInfo  g_posInfo;
 CSymbolInfo    g_symInfo;
 
-// Pivots
 PivotPoint     g_swingHigh, g_swingLow;
 PivotPoint     g_internalHigh, g_internalLow;
 PivotPoint     g_eqHigh, g_eqLow;
 
-// Trends
 int            g_swingTrend  = NEUTRAL;
 int            g_internalTrend = NEUTRAL;
 
-// Order Blocks
 OrderBlock     g_internalOB[];
 OrderBlock     g_swingOB[];
-
-// Fair Value Gaps
 FairValueGap   g_fvg[];
-
-// Breaker Blocks
 BreakerBlock   g_breakerBlocks[];
-
-// Equal Levels
 EqualLevel     g_equalHighs[];
 EqualLevel     g_equalLows[];
 
-// Sessions
 SessionState   g_asiaSession, g_londonSession, g_nySession;
-
-// Trailing Extremes
 TrailingExtremes g_trailing;
-
-// Structure Alerts
 StructureAlert g_alerts;
 
-// Previous Day/Week
 double         g_prevDayHigh, g_prevDayLow, g_prevDayOpen, g_prevDayClose;
 double         g_prevWeekHigh, g_prevWeekLow;
 
@@ -280,7 +275,6 @@ double         g_bullIDM_Level = 0;
 datetime       g_bullIDM_Time  = 0;
 int            g_bullIDM_Bar   = -1;
 bool           g_bullIDM_Taken = true;
-
 double         g_bearIDM_Level = 0;
 datetime       g_bearIDM_Time  = 0;
 int            g_bearIDM_Bar   = -1;
@@ -291,110 +285,208 @@ int            g_currentLegSwing    = -1;
 int            g_currentLegInternal = -1;
 
 // ATR handles
-int            g_atrHandle200;
-int            g_atrHandle14;
-int            g_atrHandleDisp;
-int            g_atrTrailHandle;
-double         g_atr200 = 0;
-double         g_atr14  = 0;
-double         g_atrDisp = 0;
-double         g_atrTrail = 0;
+int            g_atrHandle200, g_atrHandle14, g_atrHandleDisp, g_atrTrailHandle;
+double         g_atr200 = 0, g_atr14 = 0, g_atrDisp = 0, g_atrTrail = 0;
 
 // Bar tracking
 datetime       g_lastBarTime = 0;
 int            g_barCount    = 0;
 int            g_objCounter  = 0;
 
-// CHoCH retest pending (Strategy 1)
-bool           g_chochPending     = false;
-int            g_chochDirection   = 0;
-double         g_chochOB_Top      = 0;
-double         g_chochOB_Bottom   = 0;
-datetime       g_chochOB_Time     = 0;
-int            g_chochBar         = 0;
+// Strategy state variables
+bool           g_chochPending = false;
+int            g_chochDirection = 0;
+double         g_chochOB_Top = 0, g_chochOB_Bottom = 0;
+datetime       g_chochOB_Time = 0;
+int            g_chochBar = 0;
 
-// Sweep+BOS pending (Strategy 2)
-bool           g_sweepPending     = false;
-int            g_sweepDirection   = 0;
-double         g_sweepLevel       = 0;
-int            g_sweepBar         = 0;
+bool           g_sweepPending = false;
+int            g_sweepDirection = 0;
+double         g_sweepLevel = 0;
+int            g_sweepBar = 0;
 
-// BOS retest pending (Strategy 4)
 bool           g_bosRetestPending = false;
-int            g_bosDirection     = 0;
-double         g_bosLevel         = 0;
-int            g_bosBar           = 0;
+int            g_bosDirection = 0;
+double         g_bosLevel = 0;
+int            g_bosBar = 0;
 
-// Breaker retest pending (Strategy 7)
-bool           g_breakerPending   = false;
+bool           g_breakerPending = false;
 int            g_breakerDirection = 0;
-double         g_breakerTop       = 0;
-double         g_breakerBottom    = 0;
-int            g_breakerBar       = 0;
+double         g_breakerTop = 0, g_breakerBottom = 0;
+int            g_breakerBar = 0;
 
-// Session grab pending (Strategy 6)
 bool           g_sessionGrabPending = false;
-int            g_sessionGrabDir     = 0;
-double         g_sessionGrabEntry   = 0;
-double         g_sessionGrabStop    = 0;
-int            g_sessionGrabBar     = 0;
+int            g_sessionGrabDir = 0;
+double         g_sessionGrabEntry = 0, g_sessionGrabStop = 0;
+int            g_sessionGrabBar = 0;
 
 //+------------------------------------------------------------------+
-//| Expert initialization function                                    |
+//| GRAPHICAL HELPER: Create or move objects safely                    |
+//+------------------------------------------------------------------+
+bool ObjEnsureCreated(string name, ENUM_OBJECT type, datetime t1, double p1,
+                      datetime t2=0, double p2=0)
+{
+   if(ObjectFind(0, name) < 0)
+   {
+      if(!ObjectCreate(0, name, type, 0, t1, p1, t2, p2))
+      {
+         // Silently fail - object limit may be reached
+         return false;
+      }
+   }
+   return true;
+}
+
+void ObjSetRect(string name, datetime t1, double p1, datetime t2, double p2,
+                color clr, bool fill=true, int width=1, bool back=true)
+{
+   if(!ObjEnsureCreated(name, OBJ_RECTANGLE, t1, p1, t2, p2)) return;
+   ObjectSetInteger(0, name, OBJPROP_TIME,  0, t1);
+   ObjectSetDouble(0,  name, OBJPROP_PRICE, 0, p1);
+   ObjectSetInteger(0, name, OBJPROP_TIME,  1, t2);
+   ObjectSetDouble(0,  name, OBJPROP_PRICE, 1, p2);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_FILL,  fill);
+   ObjectSetInteger(0, name, OBJPROP_BACK,  back);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+}
+
+void ObjSetTrend(string name, datetime t1, double p1, datetime t2, double p2,
+                 color clr, ENUM_LINE_STYLE style=STYLE_SOLID, int width=1, bool ray=false)
+{
+   if(!ObjEnsureCreated(name, OBJ_TREND, t1, p1, t2, p2)) return;
+   ObjectSetInteger(0, name, OBJPROP_TIME,  0, t1);
+   ObjectSetDouble(0,  name, OBJPROP_PRICE, 0, p1);
+   ObjectSetInteger(0, name, OBJPROP_TIME,  1, t2);
+   ObjectSetDouble(0,  name, OBJPROP_PRICE, 1, p2);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, style);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, ray);
+   ObjectSetInteger(0, name, OBJPROP_BACK,  true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+}
+
+void ObjSetHLine(string name, double price, color clr, ENUM_LINE_STYLE style=STYLE_DOT, int width=1)
+{
+   if(!ObjEnsureCreated(name, OBJ_HLINE, 0, price)) return;
+   ObjectSetDouble(0,  name, OBJPROP_PRICE, 0, price);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, style);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+   ObjectSetInteger(0, name, OBJPROP_BACK,  true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+}
+
+void ObjSetText(string name, datetime t, double price, string text, color clr,
+                int fontSize=8, ENUM_ANCHOR_POINT anchor=ANCHOR_LEFT)
+{
+   if(!ObjEnsureCreated(name, OBJ_TEXT, t, price)) return;
+   ObjectSetInteger(0, name, OBJPROP_TIME,  0, t);
+   ObjectSetDouble(0,  name, OBJPROP_PRICE, 0, price);
+   ObjectSetString(0,  name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetString(0,  name, OBJPROP_FONT, "Arial");
+   ObjectSetInteger(0, name, OBJPROP_ANCHOR, anchor);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+}
+
+void ObjSetArrow(string name, datetime t, double price, int code, color clr, int width=2)
+{
+   if(!ObjEnsureCreated(name, OBJ_ARROW, t, price)) return;
+   ObjectSetInteger(0, name, OBJPROP_TIME,     0, t);
+   ObjectSetDouble(0,  name, OBJPROP_PRICE,    0, price);
+   ObjectSetInteger(0, name, OBJPROP_ARROWCODE, code);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+}
+
+void ObjSetLabel(string name, int x, int y, string text, color clr,
+                 int fontSize=8, ENUM_BASE_CORNER corner=CORNER_LEFT_UPPER)
+{
+   if(ObjectFind(0, name) < 0)
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, corner);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetString(0,  name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetString(0,  name, OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+}
+
+void ObjSetRectLabel(string name, int x, int y, int xSize, int ySize,
+                     color bgClr, color borderClr)
+{
+   if(ObjectFind(0, name) < 0)
+      ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, xSize);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, ySize);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bgClr);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, borderClr);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, name, OBJPROP_BACK, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+}
+
+void ObjDelete(string name)
+{
+   if(ObjectFind(0, name) >= 0)
+      ObjectDelete(0, name);
+}
+
+string UniqueObjName(string type)
+{
+   g_objCounter++;
+   return PREFIX + type + IntegerToString(g_objCounter);
+}
+
+//+------------------------------------------------------------------+
+//| Expert initialization                                             |
 //+------------------------------------------------------------------+
 int OnInit()
 {
    g_trade.SetExpertMagicNumber(InpMagicNumber);
    g_trade.SetDeviationInPoints(InpSlippage);
    g_trade.SetTypeFilling(ORDER_FILLING_IOC);
-
    g_symInfo.Name(_Symbol);
    g_symInfo.Refresh();
 
-   g_atrHandle200  = iATR(_Symbol, PERIOD_CURRENT, InpOB_ATR_Period);
-   g_atrHandle14   = iATR(_Symbol, PERIOD_CURRENT, 14);
-   g_atrHandleDisp = iATR(_Symbol, PERIOD_CURRENT, InpDispLength);
+   g_atrHandle200   = iATR(_Symbol, PERIOD_CURRENT, InpOB_ATR_Period);
+   g_atrHandle14    = iATR(_Symbol, PERIOD_CURRENT, 14);
+   g_atrHandleDisp  = iATR(_Symbol, PERIOD_CURRENT, InpDispLength);
    g_atrTrailHandle = iATR(_Symbol, PERIOD_CURRENT, InpTrailATR_Period);
+   if(g_atrHandle200==INVALID_HANDLE || g_atrHandle14==INVALID_HANDLE)
+   { Print("ATR indicator failed"); return INIT_FAILED; }
 
-   if(g_atrHandle200 == INVALID_HANDLE || g_atrHandle14 == INVALID_HANDLE)
-   {
-      Print("Failed to create ATR indicators");
-      return(INIT_FAILED);
-   }
+   InitPivot(g_swingHigh); InitPivot(g_swingLow);
+   InitPivot(g_internalHigh); InitPivot(g_internalLow);
+   InitPivot(g_eqHigh); InitPivot(g_eqLow);
+   InitSession(g_asiaSession); InitSession(g_londonSession); InitSession(g_nySession);
+   g_trailing.top=0; g_trailing.bottom=0; g_trailing.topTime=0; g_trailing.bottomTime=0;
 
-   InitPivot(g_swingHigh);
-   InitPivot(g_swingLow);
-   InitPivot(g_internalHigh);
-   InitPivot(g_internalLow);
-   InitPivot(g_eqHigh);
-   InitPivot(g_eqLow);
+   ArrayResize(g_internalOB,0); ArrayResize(g_swingOB,0);
+   ArrayResize(g_fvg,0); ArrayResize(g_breakerBlocks,0);
+   ArrayResize(g_equalHighs,0); ArrayResize(g_equalLows,0);
 
-   InitSession(g_asiaSession);
-   InitSession(g_londonSession);
-   InitSession(g_nySession);
-
-   g_trailing.top = 0;
-   g_trailing.bottom = 0;
-   g_trailing.topTime = 0;
-   g_trailing.bottomTime = 0;
-
-   ArrayResize(g_internalOB, 0);
-   ArrayResize(g_swingOB, 0);
-   ArrayResize(g_fvg, 0);
-   ArrayResize(g_breakerBlocks, 0);
-   ArrayResize(g_equalHighs, 0);
-   ArrayResize(g_equalLows, 0);
-
-   if(InpDrawGraphics)
-      DrawDashboard();
-
-   Print("SMC Ultimate EA initialized. Strategy: ", EnumToString(InpStrategy));
-   return(INIT_SUCCEEDED);
+   Print("SMC Ultimate EA v2 initialized. Strategy: ", EnumToString(InpStrategy));
+   return INIT_SUCCEEDED;
 }
 
-//+------------------------------------------------------------------+
-//| Expert deinitialization function                                   |
-//+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
    ObjectsDeleteAll(0, PREFIX);
@@ -412,26 +504,20 @@ void OnTick()
 {
    if(!IsNewBar())
    {
-      if(InpTrailStop)
-         ManageTrailingStop();
+      if(InpTrailStop) ManageTrailingStop();
       return;
    }
-
    g_barCount++;
-
    g_symInfo.Refresh();
-   if(g_symInfo.Spread() > InpMaxSpread)
-      return;
+   if(g_symInfo.Spread() > InpMaxSpread) return;
 
    UpdateATR();
-   if(g_atr200 <= 0 || g_atr14 <= 0)
-      return;
+   if(g_atr200 <= 0 || g_atr14 <= 0) return;
 
    ResetAlerts();
    UpdatePreviousLevels();
    UpdateSessions();
    DetectStructure();
-   DetectOrderBlocks();
    DetectFVG();
    DetectEqualLevels();
    DetectSweeps();
@@ -445,123 +531,93 @@ void OnTick()
 
    if(InpDrawGraphics)
    {
-      DrawStructureObjects();
-      DrawOrderBlockObjects();
-      DrawFVGObjects();
-      DrawSweepObjects();
-      DrawSessionObjects();
-      DrawPreviousLevels();
-      DrawStrongWeakLevels();
-      UpdateDashboard();
+      GfxDrawStructureEvents();
+      GfxDrawSwingPointLabels();
+      GfxUpdateOrderBlocks();
+      GfxUpdateFVGs();
+      GfxUpdateBreakerBlocks();
+      GfxUpdateEqualLevels();
+      GfxUpdateSessions();
+      GfxUpdatePreviousLevels();
+      GfxUpdateStrongWeakLevels();
+      GfxUpdateIDMLines();
+      GfxDrawDisplacementLabels();
+      GfxUpdateDashboard();
+      ChartRedraw(0);
    }
 
    TradeSignal signal;
    signal.valid = false;
-
    switch(InpStrategy)
    {
-      case STRATEGY_1_CHOCH_OB_RETEST:   signal = Strategy1_CHoCH_OB();       break;
-      case STRATEGY_2_SWEEP_BOS:         signal = Strategy2_SweepBOS();       break;
-      case STRATEGY_3_IDM_CONTINUATION:  signal = Strategy3_IDM();            break;
-      case STRATEGY_4_SWING_BOS_RETEST:  signal = Strategy4_SwingBOS();       break;
-      case STRATEGY_5_EQH_EQL_FADE:      signal = Strategy5_EQH_EQL();       break;
-      case STRATEGY_6_SESSION_LIQ_GRAB:  signal = Strategy6_SessionGrab();    break;
-      case STRATEGY_7_BREAKER_ENTRY:     signal = Strategy7_Breaker();        break;
-      case STRATEGY_8_PDH_PDL_SWEEP:     signal = Strategy8_PDH_PDL();        break;
-      case STRATEGY_9_FVG_FILL:          signal = Strategy9_FVG();            break;
-      case STRATEGY_10_STRONG_WEAK:      signal = Strategy10_StrongWeak();    break;
+      case STRATEGY_1_CHOCH_OB_RETEST:   signal = Strategy1_CHoCH_OB();    break;
+      case STRATEGY_2_SWEEP_BOS:         signal = Strategy2_SweepBOS();    break;
+      case STRATEGY_3_IDM_CONTINUATION:  signal = Strategy3_IDM();         break;
+      case STRATEGY_4_SWING_BOS_RETEST:  signal = Strategy4_SwingBOS();    break;
+      case STRATEGY_5_EQH_EQL_FADE:      signal = Strategy5_EQH_EQL();    break;
+      case STRATEGY_6_SESSION_LIQ_GRAB:  signal = Strategy6_SessionGrab(); break;
+      case STRATEGY_7_BREAKER_ENTRY:     signal = Strategy7_Breaker();     break;
+      case STRATEGY_8_PDH_PDL_SWEEP:     signal = Strategy8_PDH_PDL();     break;
+      case STRATEGY_9_FVG_FILL:          signal = Strategy9_FVG();         break;
+      case STRATEGY_10_STRONG_WEAK:      signal = Strategy10_StrongWeak(); break;
    }
-
-   if(signal.valid)
-      ExecuteTrade(signal);
-
-   if(InpTrailStop)
-      ManageTrailingStop();
+   if(signal.valid) ExecuteTrade(signal);
+   if(InpTrailStop) ManageTrailingStop();
 }
 
 //+------------------------------------------------------------------+
 //| HELPER FUNCTIONS                                                  |
 //+------------------------------------------------------------------+
 void InitPivot(PivotPoint &p)
-{
-   p.currentLevel = 0;
-   p.lastLevel    = 0;
-   p.crossed      = false;
-   p.barTime      = 0;
-   p.barIndex     = -1;
-}
+{ p.currentLevel=0; p.lastLevel=0; p.crossed=false; p.barTime=0; p.barIndex=-1; }
 
 void InitSession(SessionState &s)
-{
-   s.active    = false;
-   s.high      = 0;
-   s.low       = 0;
-   s.startTime = 0;
-   s.objName   = "";
-}
+{ s.active=false; s.high=0; s.low=0; s.startTime=0; s.boxName=""; s.lblName="";
+  s.highLineName=""; s.lowLineName=""; s.highLblName=""; s.lowLblName=""; }
 
-void ResetAlerts()
-{
-   ZeroMemory(g_alerts);
-}
+void ResetAlerts() { ZeroMemory(g_alerts); }
 
 bool IsNewBar()
 {
-   datetime currentBarTime = iTime(_Symbol, PERIOD_CURRENT, 0);
-   if(currentBarTime == g_lastBarTime) return false;
-   g_lastBarTime = currentBarTime;
+   datetime t = iTime(_Symbol, PERIOD_CURRENT, 0);
+   if(t == g_lastBarTime) return false;
+   g_lastBarTime = t;
    return true;
-}
-
-string ObjName(string type)
-{
-   g_objCounter++;
-   return PREFIX + type + "_" + IntegerToString(g_objCounter);
 }
 
 void UpdateATR()
 {
    double buf[];
-   if(CopyBuffer(g_atrHandle200, 0, 1, 1, buf) > 0) g_atr200 = buf[0];
-   if(CopyBuffer(g_atrHandle14, 0, 1, 1, buf) > 0)  g_atr14  = buf[0];
-   if(CopyBuffer(g_atrHandleDisp, 0, 1, 1, buf) > 0) g_atrDisp = buf[0];
-   if(CopyBuffer(g_atrTrailHandle, 0, 1, 1, buf) > 0) g_atrTrail = buf[0];
+   if(CopyBuffer(g_atrHandle200, 0, 1, 1, buf)>0) g_atr200=buf[0];
+   if(CopyBuffer(g_atrHandle14,  0, 1, 1, buf)>0) g_atr14=buf[0];
+   if(CopyBuffer(g_atrHandleDisp,0, 1, 1, buf)>0) g_atrDisp=buf[0];
+   if(CopyBuffer(g_atrTrailHandle,0,1, 1, buf)>0) g_atrTrail=buf[0];
 }
 
 int CountOpenTrades()
 {
-   int count = 0;
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
-   {
+   int c=0;
+   for(int i=PositionsTotal()-1; i>=0; i--)
       if(g_posInfo.SelectByIndex(i))
-         if(g_posInfo.Symbol() == _Symbol && g_posInfo.Magic() == InpMagicNumber)
-            count++;
-   }
-   return count;
+         if(g_posInfo.Symbol()==_Symbol && g_posInfo.Magic()==InpMagicNumber) c++;
+   return c;
 }
 
 double CalculateLotSize(double stopDistPoints)
 {
-   if(InpRiskMode == RISK_FIXED_LOT)
-      return MathMin(InpFixedLot, InpMaxLots);
-
-   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double lotStep   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   double minLot    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-
-   if(tickValue <= 0 || tickSize <= 0 || stopDistPoints <= 0)
-      return minLot;
-
-   double riskMoney  = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercent / 100.0;
-   double pointValue = tickValue / tickSize * _Point;
-   double lots       = riskMoney / (stopDistPoints * pointValue);
-
-   lots = MathFloor(lots / lotStep) * lotStep;
-   lots = MathMax(lots, minLot);
-   lots = MathMin(lots, InpMaxLots);
-
-   return NormalizeDouble(lots, 2);
+   if(InpRiskMode==RISK_FIXED_LOT) return MathMin(InpFixedLot, InpMaxLots);
+   double tv=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+   double ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   double ls=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+   double ml=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+   if(tv<=0||ts<=0||stopDistPoints<=0) return ml;
+   double risk=AccountInfoDouble(ACCOUNT_BALANCE)*InpRiskPercent/100.0;
+   double pv=tv/ts*_Point;
+   double lots=risk/(stopDistPoints*pv);
+   lots=MathFloor(lots/ls)*ls;
+   lots=MathMax(lots,ml);
+   lots=MathMin(lots,InpMaxLots);
+   return NormalizeDouble(lots,2);
 }
 
 //+------------------------------------------------------------------+
@@ -569,118 +625,68 @@ double CalculateLotSize(double stopDistPoints)
 //+------------------------------------------------------------------+
 int DetectLeg(int size, int shift)
 {
-   double pivotHigh = iHigh(_Symbol, PERIOD_CURRENT, shift + size);
-   double pivotLow  = iLow(_Symbol, PERIOD_CURRENT, shift + size);
-
-   double highest = pivotHigh;
-   double lowest  = pivotLow;
-
-   for(int i = shift; i < shift + size; i++)
+   double pH=iHigh(_Symbol,PERIOD_CURRENT,shift+size);
+   double pL=iLow(_Symbol,PERIOD_CURRENT,shift+size);
+   double highest=pH, lowest=pL;
+   for(int i=shift; i<shift+size; i++)
    {
-      double h = iHigh(_Symbol, PERIOD_CURRENT, i);
-      double l = iLow(_Symbol, PERIOD_CURRENT, i);
-      if(h > highest) highest = h;
-      if(l < lowest)  lowest  = l;
+      double h=iHigh(_Symbol,PERIOD_CURRENT,i);
+      double l=iLow(_Symbol,PERIOD_CURRENT,i);
+      if(h>highest) highest=h;
+      if(l<lowest)  lowest=l;
    }
-
-   if(pivotHigh > highest) return BEARISH_LEG;
-   if(pivotLow < lowest)   return BULLISH_LEG;
+   if(pH>highest) return BEARISH_LEG;
+   if(pL<lowest)  return BULLISH_LEG;
    return -1;
 }
 
 void DetectPivots(int size, PivotPoint &highPivot, PivotPoint &lowPivot, bool isInternal)
 {
-   int leg = DetectLeg(size, 1);
-   if(leg < 0) return;
+   int leg=DetectLeg(size,1);
+   if(leg<0) return;
+   int prevLeg=DetectLeg(size,2);
+   if(leg==prevLeg || prevLeg<0) return;
 
-   int prevLeg = DetectLeg(size, 2);
-
-   bool newLeg = (leg != prevLeg && prevLeg >= 0);
-   if(!newLeg) return;
-
-   if(leg == BULLISH_LEG)
+   if(leg==BULLISH_LEG)
    {
-      double pivotLowVal = iLow(_Symbol, PERIOD_CURRENT, 1 + size);
-      datetime pivotTime = iTime(_Symbol, PERIOD_CURRENT, 1 + size);
-      int pivotIndex     = g_barCount - (1 + size);
-
-      lowPivot.lastLevel    = lowPivot.currentLevel;
-      lowPivot.currentLevel = pivotLowVal;
-      lowPivot.crossed      = false;
-      lowPivot.barTime      = pivotTime;
-      lowPivot.barIndex     = pivotIndex;
-
-      if(!isInternal)
-      {
-         g_trailing.bottom     = pivotLowVal;
-         g_trailing.bottomTime = pivotTime;
-      }
+      double v=iLow(_Symbol,PERIOD_CURRENT,1+size);
+      datetime t=iTime(_Symbol,PERIOD_CURRENT,1+size);
+      int idx=g_barCount-(1+size);
+      lowPivot.lastLevel=lowPivot.currentLevel;
+      lowPivot.currentLevel=v; lowPivot.crossed=false;
+      lowPivot.barTime=t; lowPivot.barIndex=idx;
+      if(!isInternal) { g_trailing.bottom=v; g_trailing.bottomTime=t; }
    }
    else
    {
-      double pivotHighVal = iHigh(_Symbol, PERIOD_CURRENT, 1 + size);
-      datetime pivotTime  = iTime(_Symbol, PERIOD_CURRENT, 1 + size);
-      int pivotIndex      = g_barCount - (1 + size);
-
-      highPivot.lastLevel    = highPivot.currentLevel;
-      highPivot.currentLevel = pivotHighVal;
-      highPivot.crossed      = false;
-      highPivot.barTime      = pivotTime;
-      highPivot.barIndex     = pivotIndex;
-
-      if(!isInternal)
-      {
-         g_trailing.top     = pivotHighVal;
-         g_trailing.topTime = pivotTime;
-      }
+      double v=iHigh(_Symbol,PERIOD_CURRENT,1+size);
+      datetime t=iTime(_Symbol,PERIOD_CURRENT,1+size);
+      int idx=g_barCount-(1+size);
+      highPivot.lastLevel=highPivot.currentLevel;
+      highPivot.currentLevel=v; highPivot.crossed=false;
+      highPivot.barTime=t; highPivot.barIndex=idx;
+      if(!isInternal) { g_trailing.top=v; g_trailing.topTime=t; }
    }
 }
 
 void DetectStructureBreak(PivotPoint &highPivot, PivotPoint &lowPivot, int &trend, bool isInternal)
 {
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
+   double c=iClose(_Symbol,PERIOD_CURRENT,1);
 
-   // Bullish break
-   if(highPivot.currentLevel > 0 && !highPivot.crossed && closePrice > highPivot.currentLevel)
+   if(highPivot.currentLevel>0 && !highPivot.crossed && c>highPivot.currentLevel)
    {
-      bool isCHoCH = (trend == BEARISH);
-
-      highPivot.crossed = true;
-      trend = BULLISH;
-
-      if(isInternal)
-      {
-         if(isCHoCH) g_alerts.internalBullishCHoCH = true;
-         else        g_alerts.internalBullishBOS   = true;
-      }
-      else
-      {
-         if(isCHoCH) g_alerts.swingBullishCHoCH = true;
-         else        g_alerts.swingBullishBOS   = true;
-      }
-
+      bool isCHoCH=(trend==BEARISH);
+      highPivot.crossed=true; trend=BULLISH;
+      if(isInternal) { if(isCHoCH) g_alerts.internalBullishCHoCH=true; else g_alerts.internalBullishBOS=true; }
+      else           { if(isCHoCH) g_alerts.swingBullishCHoCH=true;    else g_alerts.swingBullishBOS=true; }
       StoreOrderBlock(highPivot, isInternal, BULLISH);
    }
-
-   // Bearish break
-   if(lowPivot.currentLevel > 0 && !lowPivot.crossed && closePrice < lowPivot.currentLevel)
+   if(lowPivot.currentLevel>0 && !lowPivot.crossed && c<lowPivot.currentLevel)
    {
-      bool isCHoCH = (trend == BULLISH);
-
-      lowPivot.crossed = true;
-      trend = BEARISH;
-
-      if(isInternal)
-      {
-         if(isCHoCH) g_alerts.internalBearishCHoCH = true;
-         else        g_alerts.internalBearishBOS   = true;
-      }
-      else
-      {
-         if(isCHoCH) g_alerts.swingBearishCHoCH = true;
-         else        g_alerts.swingBearishBOS   = true;
-      }
-
+      bool isCHoCH=(trend==BULLISH);
+      lowPivot.crossed=true; trend=BEARISH;
+      if(isInternal) { if(isCHoCH) g_alerts.internalBearishCHoCH=true; else g_alerts.internalBearishBOS=true; }
+      else           { if(isCHoCH) g_alerts.swingBearishCHoCH=true;    else g_alerts.swingBearishBOS=true; }
       StoreOrderBlock(lowPivot, isInternal, BEARISH);
    }
 }
@@ -690,122 +696,85 @@ void DetectStructure()
    DetectPivots(InpSwingLength, g_swingHigh, g_swingLow, false);
    DetectPivots(InpInternalLength, g_internalHigh, g_internalLow, true);
    DetectPivots(InpEQL_Bars, g_eqHigh, g_eqLow, true);
-
    DetectStructureBreak(g_swingHigh, g_swingLow, g_swingTrend, false);
    DetectStructureBreak(g_internalHigh, g_internalLow, g_internalTrend, true);
 }
 
 //+------------------------------------------------------------------+
-//| ORDER BLOCK DETECTION & MANAGEMENT                                |
+//| ORDER BLOCK STORAGE                                               |
 //+------------------------------------------------------------------+
 void StoreOrderBlock(PivotPoint &pivot, bool isInternal, int bias)
 {
-   if(pivot.barIndex < 0) return;
+   if(pivot.barIndex<0) return;
+   int lookback=g_barCount-pivot.barIndex;
+   if(lookback<1 || lookback>500) return;
 
-   int lookback = g_barCount - pivot.barIndex;
-   if(lookback < 1 || lookback > 500) return;
-
-   double obHigh = 0, obLow = DBL_MAX;
-   datetime obTime = 0;
-
-   // Find the extreme candle between pivot and current
-   int bestBar = lookback;
-   if(bias == BEARISH)
+   int bestBar=lookback;
+   if(bias==BEARISH)
    {
-      double maxH = 0;
-      for(int i = 1; i <= lookback && i < Bars(_Symbol, PERIOD_CURRENT); i++)
-      {
-         double h = iHigh(_Symbol, PERIOD_CURRENT, i);
-         if(h > maxH) { maxH = h; bestBar = i; }
-      }
+      double maxH=0;
+      for(int i=1; i<=lookback && i<Bars(_Symbol,PERIOD_CURRENT); i++)
+      { double h=iHigh(_Symbol,PERIOD_CURRENT,i); if(h>maxH){maxH=h; bestBar=i;} }
    }
    else
    {
-      double minL = DBL_MAX;
-      for(int i = 1; i <= lookback && i < Bars(_Symbol, PERIOD_CURRENT); i++)
-      {
-         double l = iLow(_Symbol, PERIOD_CURRENT, i);
-         if(l < minL) { minL = l; bestBar = i; }
-      }
+      double minL=DBL_MAX;
+      for(int i=1; i<=lookback && i<Bars(_Symbol,PERIOD_CURRENT); i++)
+      { double l=iLow(_Symbol,PERIOD_CURRENT,i); if(l<minL){minL=l; bestBar=i;} }
    }
+   if(bestBar>=Bars(_Symbol,PERIOD_CURRENT)) return;
 
-   if(bestBar >= Bars(_Symbol, PERIOD_CURRENT)) return;
-
-   obHigh = iHigh(_Symbol, PERIOD_CURRENT, bestBar);
-   obLow  = iLow(_Symbol, PERIOD_CURRENT, bestBar);
-   obTime = iTime(_Symbol, PERIOD_CURRENT, bestBar);
-
-   // Filter volatile bars
-   double barRange = obHigh - obLow;
-   if(barRange >= 2.0 * g_atr200)
-   {
-      if(bias == BEARISH) obLow = obHigh;
-      else                obHigh = obLow;
-   }
+   double obH=iHigh(_Symbol,PERIOD_CURRENT,bestBar);
+   double obL=iLow(_Symbol,PERIOD_CURRENT,bestBar);
+   double barRange=obH-obL;
+   if(barRange>=2.0*g_atr200)
+   { if(bias==BEARISH) obL=obH; else obH=obL; }
 
    OrderBlock ob;
-   ob.top     = obHigh;
-   ob.bottom  = obLow;
-   ob.barTime = obTime;
-   ob.bias    = bias;
-   ob.valid   = true;
-   ob.touched = false;
-   ob.objName = ObjName(isInternal ? "iOB" : "sOB");
+   ob.top=obH; ob.bottom=obL;
+   ob.barTime=iTime(_Symbol,PERIOD_CURRENT,bestBar);
+   ob.bias=bias; ob.valid=true; ob.touched=false;
+   ob.boxName=UniqueObjName(isInternal?"iOB":"sOB");
+   ob.lblName=ob.boxName+"L";
 
    if(isInternal)
    {
-      int sz = ArraySize(g_internalOB);
-      ArrayResize(g_internalOB, sz + 1);
-      g_internalOB[sz] = ob;
-      if(ArraySize(g_internalOB) > InpMaxOB * 2)
-      {
-         // Remove oldest
-         for(int i = 0; i < ArraySize(g_internalOB) - 1; i++)
-            g_internalOB[i] = g_internalOB[i+1];
-         ArrayResize(g_internalOB, ArraySize(g_internalOB) - 1);
-      }
+      int sz=ArraySize(g_internalOB); ArrayResize(g_internalOB,sz+1); g_internalOB[sz]=ob;
+      if(ArraySize(g_internalOB)>InpMaxOB*2)
+      { ObjDelete(g_internalOB[0].boxName); ObjDelete(g_internalOB[0].lblName);
+        for(int i=0;i<ArraySize(g_internalOB)-1;i++) g_internalOB[i]=g_internalOB[i+1];
+        ArrayResize(g_internalOB,ArraySize(g_internalOB)-1); }
    }
    else
    {
-      int sz = ArraySize(g_swingOB);
-      ArrayResize(g_swingOB, sz + 1);
-      g_swingOB[sz] = ob;
-      if(ArraySize(g_swingOB) > InpMaxOB * 2)
-      {
-         for(int i = 0; i < ArraySize(g_swingOB) - 1; i++)
-            g_swingOB[i] = g_swingOB[i+1];
-         ArrayResize(g_swingOB, ArraySize(g_swingOB) - 1);
-      }
+      int sz=ArraySize(g_swingOB); ArrayResize(g_swingOB,sz+1); g_swingOB[sz]=ob;
+      if(ArraySize(g_swingOB)>InpMaxOB*2)
+      { ObjDelete(g_swingOB[0].boxName); ObjDelete(g_swingOB[0].lblName);
+        for(int i=0;i<ArraySize(g_swingOB)-1;i++) g_swingOB[i]=g_swingOB[i+1];
+        ArrayResize(g_swingOB,ArraySize(g_swingOB)-1); }
    }
-}
-
-void DetectOrderBlocks()
-{
-   // Order blocks are detected in DetectStructureBreak via StoreOrderBlock
 }
 
 void MitigateOrderBlocks()
 {
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-   double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-
-   for(int i = ArraySize(g_internalOB) - 1; i >= 0; i--)
+   double c=iClose(_Symbol,PERIOD_CURRENT,1);
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1);
+   double l=iLow(_Symbol,PERIOD_CURRENT,1);
+   for(int i=ArraySize(g_internalOB)-1; i>=0; i--)
    {
       if(!g_internalOB[i].valid) continue;
-      if(g_internalOB[i].bias == BEARISH && highPrice > g_internalOB[i].top)
-         g_internalOB[i].valid = false;
-      if(g_internalOB[i].bias == BULLISH && lowPrice < g_internalOB[i].bottom)
-         g_internalOB[i].valid = false;
+      if(g_internalOB[i].bias==BEARISH && h>g_internalOB[i].top)
+      { g_internalOB[i].valid=false; ObjDelete(g_internalOB[i].boxName); ObjDelete(g_internalOB[i].lblName); }
+      if(g_internalOB[i].bias==BULLISH && l<g_internalOB[i].bottom)
+      { g_internalOB[i].valid=false; ObjDelete(g_internalOB[i].boxName); ObjDelete(g_internalOB[i].lblName); }
    }
-
-   for(int i = ArraySize(g_swingOB) - 1; i >= 0; i--)
+   for(int i=ArraySize(g_swingOB)-1; i>=0; i--)
    {
       if(!g_swingOB[i].valid) continue;
-      if(g_swingOB[i].bias == BEARISH && highPrice > g_swingOB[i].top)
-         g_swingOB[i].valid = false;
-      if(g_swingOB[i].bias == BULLISH && lowPrice < g_swingOB[i].bottom)
-         g_swingOB[i].valid = false;
+      if(g_swingOB[i].bias==BEARISH && h>g_swingOB[i].top)
+      { g_swingOB[i].valid=false; ObjDelete(g_swingOB[i].boxName); ObjDelete(g_swingOB[i].lblName); }
+      if(g_swingOB[i].bias==BULLISH && l<g_swingOB[i].bottom)
+      { g_swingOB[i].valid=false; ObjDelete(g_swingOB[i].boxName); ObjDelete(g_swingOB[i].lblName); }
    }
 }
 
@@ -814,138 +783,91 @@ void MitigateOrderBlocks()
 //+------------------------------------------------------------------+
 void DetectFVG()
 {
-   if(Bars(_Symbol, PERIOD_CURRENT) < 4) return;
+   if(Bars(_Symbol,PERIOD_CURRENT)<4) return;
+   double h0=iHigh(_Symbol,PERIOD_CURRENT,1), l0=iLow(_Symbol,PERIOD_CURRENT,1);
+   double c1=iClose(_Symbol,PERIOD_CURRENT,2), o1=iOpen(_Symbol,PERIOD_CURRENT,2);
+   double h2=iHigh(_Symbol,PERIOD_CURRENT,3), l2=iLow(_Symbol,PERIOD_CURRENT,3);
+   double bd=c1-o1;
+   bool thOk=true;
+   if(InpAutoFVGThreshold && g_atr200>0)
+     thOk=(MathAbs(bd)/(o1>0?o1:1)*100>0.01);
 
-   double high0 = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double low0  = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double close1 = iClose(_Symbol, PERIOD_CURRENT, 2);
-   double open1  = iOpen(_Symbol, PERIOD_CURRENT, 2);
-   double high2 = iHigh(_Symbol, PERIOD_CURRENT, 3);
-   double low2  = iLow(_Symbol, PERIOD_CURRENT, 3);
-
-   double barDelta = (close1 - open1);
-   bool autoThreshOk = true;
-
-   if(InpAutoFVGThreshold && g_atr200 > 0)
-   {
-      double deltaPercent = MathAbs(barDelta) / (open1 > 0 ? open1 : 1) * 100;
-      autoThreshOk = (deltaPercent > 0.01);
-   }
-
-   // Bullish FVG
-   if(low0 > high2 && close1 > high2 && barDelta > 0 && autoThreshOk)
+   if(l0>h2 && c1>h2 && bd>0 && thOk)
    {
       FairValueGap fvg;
-      fvg.top       = low0;
-      fvg.bottom    = high2;
-      fvg.bias      = BULLISH;
-      fvg.barTime   = iTime(_Symbol, PERIOD_CURRENT, 2);
-      fvg.valid     = true;
-      fvg.mitigated = false;
-      fvg.objName   = ObjName("FVG");
-
-      int sz = ArraySize(g_fvg);
-      ArrayResize(g_fvg, sz + 1);
-      g_fvg[sz] = fvg;
+      fvg.top=l0; fvg.bottom=h2; fvg.bias=BULLISH;
+      fvg.barTime=iTime(_Symbol,PERIOD_CURRENT,2);
+      fvg.valid=true; fvg.mitigated=false;
+      fvg.boxName=UniqueObjName("FVG"); fvg.lblName=fvg.boxName+"L";
+      int sz=ArraySize(g_fvg); ArrayResize(g_fvg,sz+1); g_fvg[sz]=fvg;
    }
-
-   // Bearish FVG
-   if(high0 < low2 && close1 < low2 && barDelta < 0 && autoThreshOk)
+   if(h0<l2 && c1<l2 && bd<0 && thOk)
    {
       FairValueGap fvg;
-      fvg.top       = low2;
-      fvg.bottom    = high0;
-      fvg.bias      = BEARISH;
-      fvg.barTime   = iTime(_Symbol, PERIOD_CURRENT, 2);
-      fvg.valid     = true;
-      fvg.mitigated = false;
-      fvg.objName   = ObjName("FVG");
-
-      int sz = ArraySize(g_fvg);
-      ArrayResize(g_fvg, sz + 1);
-      g_fvg[sz] = fvg;
+      fvg.top=l2; fvg.bottom=h0; fvg.bias=BEARISH;
+      fvg.barTime=iTime(_Symbol,PERIOD_CURRENT,2);
+      fvg.valid=true; fvg.mitigated=false;
+      fvg.boxName=UniqueObjName("FVG"); fvg.lblName=fvg.boxName+"L";
+      int sz=ArraySize(g_fvg); ArrayResize(g_fvg,sz+1); g_fvg[sz]=fvg;
    }
-
-   // Limit array size
-   while(ArraySize(g_fvg) > 30)
-   {
-      for(int i = 0; i < ArraySize(g_fvg) - 1; i++)
-         g_fvg[i] = g_fvg[i+1];
-      ArrayResize(g_fvg, ArraySize(g_fvg) - 1);
-   }
+   while(ArraySize(g_fvg)>30)
+   { ObjDelete(g_fvg[0].boxName); ObjDelete(g_fvg[0].lblName);
+     for(int i=0;i<ArraySize(g_fvg)-1;i++) g_fvg[i]=g_fvg[i+1];
+     ArrayResize(g_fvg,ArraySize(g_fvg)-1); }
 }
 
 void MitigateFVG()
 {
-   double lowPrice  = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double highPrice = iHigh(_Symbol, PERIOD_CURRENT, 1);
-
-   for(int i = ArraySize(g_fvg) - 1; i >= 0; i--)
+   double l=iLow(_Symbol,PERIOD_CURRENT,1), h=iHigh(_Symbol,PERIOD_CURRENT,1);
+   for(int i=ArraySize(g_fvg)-1; i>=0; i--)
    {
       if(!g_fvg[i].valid) continue;
-      if(g_fvg[i].bias == BULLISH && lowPrice < g_fvg[i].bottom)
-         g_fvg[i].valid = false;
-      if(g_fvg[i].bias == BEARISH && highPrice > g_fvg[i].top)
-         g_fvg[i].valid = false;
+      if(g_fvg[i].bias==BULLISH && l<g_fvg[i].bottom)
+      { g_fvg[i].valid=false; ObjDelete(g_fvg[i].boxName); ObjDelete(g_fvg[i].lblName); }
+      if(g_fvg[i].bias==BEARISH && h>g_fvg[i].top)
+      { g_fvg[i].valid=false; ObjDelete(g_fvg[i].boxName); ObjDelete(g_fvg[i].lblName); }
    }
 }
 
 //+------------------------------------------------------------------+
-//| EQUAL HIGHS/LOWS DETECTION                                       |
+//| EQUAL HIGHS/LOWS                                                  |
 //+------------------------------------------------------------------+
 void DetectEqualLevels()
 {
-   if(g_eqHigh.currentLevel > 0 && g_eqHigh.lastLevel > 0)
+   if(g_eqHigh.currentLevel>0 && g_eqHigh.lastLevel>0)
    {
-      double diff = MathAbs(g_eqHigh.currentLevel - g_eqHigh.lastLevel);
-      if(diff < InpEQL_Threshold * g_atr200 && diff > 0)
+      double diff=MathAbs(g_eqHigh.currentLevel-g_eqHigh.lastLevel);
+      if(diff<InpEQL_Threshold*g_atr200 && diff>0)
       {
          EqualLevel eq;
-         eq.level      = (g_eqHigh.currentLevel + g_eqHigh.lastLevel) / 2.0;
-         eq.time1      = g_eqHigh.barTime;
-         eq.time2      = iTime(_Symbol, PERIOD_CURRENT, 1);
-         eq.touchCount = 2;
-         eq.valid      = true;
-         eq.objName    = ObjName("EQH");
-
-         int sz = ArraySize(g_equalHighs);
-         ArrayResize(g_equalHighs, sz + 1);
-         g_equalHighs[sz] = eq;
+         eq.level=(g_eqHigh.currentLevel+g_eqHigh.lastLevel)/2.0;
+         eq.time1=g_eqHigh.barTime; eq.time2=iTime(_Symbol,PERIOD_CURRENT,1);
+         eq.touchCount=2; eq.valid=true;
+         eq.lineName=UniqueObjName("EQH"); eq.lblName=eq.lineName+"L";
+         int sz=ArraySize(g_equalHighs); ArrayResize(g_equalHighs,sz+1); g_equalHighs[sz]=eq;
       }
    }
-
-   if(g_eqLow.currentLevel > 0 && g_eqLow.lastLevel > 0)
+   if(g_eqLow.currentLevel>0 && g_eqLow.lastLevel>0)
    {
-      double diff = MathAbs(g_eqLow.currentLevel - g_eqLow.lastLevel);
-      if(diff < InpEQL_Threshold * g_atr200 && diff > 0)
+      double diff=MathAbs(g_eqLow.currentLevel-g_eqLow.lastLevel);
+      if(diff<InpEQL_Threshold*g_atr200 && diff>0)
       {
          EqualLevel eq;
-         eq.level      = (g_eqLow.currentLevel + g_eqLow.lastLevel) / 2.0;
-         eq.time1      = g_eqLow.barTime;
-         eq.time2      = iTime(_Symbol, PERIOD_CURRENT, 1);
-         eq.touchCount = 2;
-         eq.valid      = true;
-         eq.objName    = ObjName("EQL");
-
-         int sz = ArraySize(g_equalLows);
-         ArrayResize(g_equalLows, sz + 1);
-         g_equalLows[sz] = eq;
+         eq.level=(g_eqLow.currentLevel+g_eqLow.lastLevel)/2.0;
+         eq.time1=g_eqLow.barTime; eq.time2=iTime(_Symbol,PERIOD_CURRENT,1);
+         eq.touchCount=2; eq.valid=true;
+         eq.lineName=UniqueObjName("EQL"); eq.lblName=eq.lineName+"L";
+         int sz=ArraySize(g_equalLows); ArrayResize(g_equalLows,sz+1); g_equalLows[sz]=eq;
       }
    }
-
-   // Limit arrays
-   while(ArraySize(g_equalHighs) > 20)
-   {
-      for(int i = 0; i < ArraySize(g_equalHighs) - 1; i++)
-         g_equalHighs[i] = g_equalHighs[i+1];
-      ArrayResize(g_equalHighs, ArraySize(g_equalHighs) - 1);
-   }
-   while(ArraySize(g_equalLows) > 20)
-   {
-      for(int i = 0; i < ArraySize(g_equalLows) - 1; i++)
-         g_equalLows[i] = g_equalLows[i+1];
-      ArrayResize(g_equalLows, ArraySize(g_equalLows) - 1);
-   }
+   while(ArraySize(g_equalHighs)>20)
+   { ObjDelete(g_equalHighs[0].lineName); ObjDelete(g_equalHighs[0].lblName);
+     for(int i=0;i<ArraySize(g_equalHighs)-1;i++) g_equalHighs[i]=g_equalHighs[i+1];
+     ArrayResize(g_equalHighs,ArraySize(g_equalHighs)-1); }
+   while(ArraySize(g_equalLows)>20)
+   { ObjDelete(g_equalLows[0].lineName); ObjDelete(g_equalLows[0].lblName);
+     for(int i=0;i<ArraySize(g_equalLows)-1;i++) g_equalLows[i]=g_equalLows[i+1];
+     ArrayResize(g_equalLows,ArraySize(g_equalLows)-1); }
 }
 
 //+------------------------------------------------------------------+
@@ -953,76 +875,68 @@ void DetectEqualLevels()
 //+------------------------------------------------------------------+
 void DetectSweeps()
 {
-   double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1), l=iLow(_Symbol,PERIOD_CURRENT,1);
+   double c=iClose(_Symbol,PERIOD_CURRENT,1);
+   datetime t=iTime(_Symbol,PERIOD_CURRENT,1);
+   double minP=g_atr14*InpSweepMinATR;
 
-   double minPierce = g_atr14 * InpSweepMinATR;
-
-   // Check swing high sweep (BSL)
-   if(g_swingHigh.currentLevel > 0 && g_swingHigh.barIndex > 0)
+   // Swing high sweep (BSL)
+   if(g_swingHigh.currentLevel>0 && g_swingHigh.barIndex>0)
    {
-      int age = g_barCount - g_swingHigh.barIndex;
-      if(age > 0 && age <= InpSweepMaxAge)
+      int age=g_barCount-g_swingHigh.barIndex;
+      if(age>0 && age<=InpSweepMaxAge && h>g_swingHigh.currentLevel+minP)
       {
-         if(highPrice > g_swingHigh.currentLevel + minPierce)
+         bool ok=!InpSweepCloseBack || c<g_swingHigh.currentLevel;
+         if(ok)
          {
-            bool closeBackOk = !InpSweepCloseBack || closePrice < g_swingHigh.currentLevel;
-            if(closeBackOk)
+            g_alerts.bearishSweep=true;
+            if(InpDrawGraphics)
             {
-               g_alerts.bearishSweep = true;
-               if(InpDrawGraphics)
-                  DrawSweepLabel(iTime(_Symbol, PERIOD_CURRENT, 1), highPrice, "BSL Sweep", InpSweepBearColor, false);
+               string ln=UniqueObjName("SwpL"); string lb=UniqueObjName("SwpB");
+               ObjSetTrend(ln, g_swingHigh.barTime, g_swingHigh.currentLevel, t, g_swingHigh.currentLevel,
+                           InpSweepBearColor, STYLE_DOT, 1);
+               ObjSetText(lb, t, h, "BSL Sweep", InpSweepBearColor, 8, ANCHOR_LOWER);
             }
          }
       }
    }
-
-   // Check swing low sweep (SSL)
-   if(g_swingLow.currentLevel > 0 && g_swingLow.barIndex > 0)
+   // Swing low sweep (SSL)
+   if(g_swingLow.currentLevel>0 && g_swingLow.barIndex>0)
    {
-      int age = g_barCount - g_swingLow.barIndex;
-      if(age > 0 && age <= InpSweepMaxAge)
+      int age=g_barCount-g_swingLow.barIndex;
+      if(age>0 && age<=InpSweepMaxAge && l<g_swingLow.currentLevel-minP)
       {
-         if(lowPrice < g_swingLow.currentLevel - minPierce)
+         bool ok=!InpSweepCloseBack || c>g_swingLow.currentLevel;
+         if(ok)
          {
-            bool closeBackOk = !InpSweepCloseBack || closePrice > g_swingLow.currentLevel;
-            if(closeBackOk)
+            g_alerts.bullishSweep=true;
+            if(InpDrawGraphics)
             {
-               g_alerts.bullishSweep = true;
-               if(InpDrawGraphics)
-                  DrawSweepLabel(iTime(_Symbol, PERIOD_CURRENT, 1), lowPrice, "SSL Sweep", InpSweepBullColor, true);
+               string ln=UniqueObjName("SwpL"); string lb=UniqueObjName("SwpB");
+               ObjSetTrend(ln, g_swingLow.barTime, g_swingLow.currentLevel, t, g_swingLow.currentLevel,
+                           InpSweepBullColor, STYLE_DOT, 1);
+               ObjSetText(lb, t, l, "SSL Sweep", InpSweepBullColor, 8, ANCHOR_UPPER);
             }
          }
       }
    }
-
-   // Check internal sweeps too
-   if(g_internalHigh.currentLevel > 0 && g_internalHigh.barIndex > 0)
+   // Internal sweeps
+   if(g_internalHigh.currentLevel>0 && g_internalHigh.barIndex>0)
    {
-      int age = g_barCount - g_internalHigh.barIndex;
-      if(age > 0 && age <= InpSweepMaxAge)
+      int age=g_barCount-g_internalHigh.barIndex;
+      if(age>0 && age<=InpSweepMaxAge && h>g_internalHigh.currentLevel+minP)
       {
-         if(highPrice > g_internalHigh.currentLevel + minPierce)
-         {
-            bool closeBackOk = !InpSweepCloseBack || closePrice < g_internalHigh.currentLevel;
-            if(closeBackOk)
-               g_alerts.bearishSweep = true;
-         }
+         bool ok=!InpSweepCloseBack || c<g_internalHigh.currentLevel;
+         if(ok) g_alerts.bearishSweep=true;
       }
    }
-
-   if(g_internalLow.currentLevel > 0 && g_internalLow.barIndex > 0)
+   if(g_internalLow.currentLevel>0 && g_internalLow.barIndex>0)
    {
-      int age = g_barCount - g_internalLow.barIndex;
-      if(age > 0 && age <= InpSweepMaxAge)
+      int age=g_barCount-g_internalLow.barIndex;
+      if(age>0 && age<=InpSweepMaxAge && l<g_internalLow.currentLevel-minP)
       {
-         if(lowPrice < g_internalLow.currentLevel - minPierce)
-         {
-            bool closeBackOk = !InpSweepCloseBack || closePrice > g_internalLow.currentLevel;
-            if(closeBackOk)
-               g_alerts.bullishSweep = true;
-         }
+         bool ok=!InpSweepCloseBack || c>g_internalLow.currentLevel;
+         if(ok) g_alerts.bullishSweep=true;
       }
    }
 }
@@ -1032,77 +946,36 @@ void DetectSweeps()
 //+------------------------------------------------------------------+
 void DetectIDM()
 {
-   // Update bullish IDM candidate
-   if(g_swingTrend == BULLISH && g_internalLow.currentLevel > 0)
+   if(g_swingTrend==BULLISH && g_internalLow.currentLevel>0)
    {
-      int age = g_barCount - g_internalLow.barIndex;
-      if(age > 0 && age <= InpIDM_MaxAge)
-      {
-         if(g_bullIDM_Taken || g_bullIDM_Level == 0)
-         {
-            g_bullIDM_Level = g_internalLow.currentLevel;
-            g_bullIDM_Time  = g_internalLow.barTime;
-            g_bullIDM_Bar   = g_internalLow.barIndex;
-            g_bullIDM_Taken = false;
-         }
-      }
+      int age=g_barCount-g_internalLow.barIndex;
+      if(age>0 && age<=InpIDM_MaxAge && (g_bullIDM_Taken || g_bullIDM_Level==0))
+      { g_bullIDM_Level=g_internalLow.currentLevel; g_bullIDM_Time=g_internalLow.barTime;
+        g_bullIDM_Bar=g_internalLow.barIndex; g_bullIDM_Taken=false; }
    }
-
-   if(g_swingTrend != BULLISH && g_bullIDM_Level > 0 && !g_bullIDM_Taken)
+   if(g_swingTrend!=BULLISH && g_bullIDM_Level>0 && !g_bullIDM_Taken)
+      g_bullIDM_Taken=true;
+   if(g_swingTrend==BEARISH && g_internalHigh.currentLevel>0)
    {
-      g_bullIDM_Taken = true;
+      int age=g_barCount-g_internalHigh.barIndex;
+      if(age>0 && age<=InpIDM_MaxAge && (g_bearIDM_Taken || g_bearIDM_Level==0))
+      { g_bearIDM_Level=g_internalHigh.currentLevel; g_bearIDM_Time=g_internalHigh.barTime;
+        g_bearIDM_Bar=g_internalHigh.barIndex; g_bearIDM_Taken=false; }
    }
+   if(g_swingTrend!=BEARISH && g_bearIDM_Level>0 && !g_bearIDM_Taken)
+      g_bearIDM_Taken=true;
 
-   // Update bearish IDM candidate
-   if(g_swingTrend == BEARISH && g_internalHigh.currentLevel > 0)
+   double l=iLow(_Symbol,PERIOD_CURRENT,1), h=iHigh(_Symbol,PERIOD_CURRENT,1);
+   double c=iClose(_Symbol,PERIOD_CURRENT,1);
+   if(g_swingTrend==BULLISH && !g_bullIDM_Taken && g_bullIDM_Level>0 && l<=g_bullIDM_Level)
    {
-      int age = g_barCount - g_internalHigh.barIndex;
-      if(age > 0 && age <= InpIDM_MaxAge)
-      {
-         if(g_bearIDM_Taken || g_bearIDM_Level == 0)
-         {
-            g_bearIDM_Level = g_internalHigh.currentLevel;
-            g_bearIDM_Time  = g_internalHigh.barTime;
-            g_bearIDM_Bar   = g_internalHigh.barIndex;
-            g_bearIDM_Taken = false;
-         }
-      }
+      bool ok=!InpIDM_CloseBack || c>g_bullIDM_Level;
+      if(ok) { g_bullIDM_Taken=true; g_alerts.bullishIDM=true; }
    }
-
-   if(g_swingTrend != BEARISH && g_bearIDM_Level > 0 && !g_bearIDM_Taken)
+   if(g_swingTrend==BEARISH && !g_bearIDM_Taken && g_bearIDM_Level>0 && h>=g_bearIDM_Level)
    {
-      g_bearIDM_Taken = true;
-   }
-
-   // Check if IDM taken
-   double lowPrice  = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double highPrice = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-   if(g_swingTrend == BULLISH && !g_bullIDM_Taken && g_bullIDM_Level > 0)
-   {
-      if(lowPrice <= g_bullIDM_Level)
-      {
-         bool closeBackOk = !InpIDM_CloseBack || closePrice > g_bullIDM_Level;
-         if(closeBackOk)
-         {
-            g_bullIDM_Taken = true;
-            g_alerts.bullishIDM = true;
-         }
-      }
-   }
-
-   if(g_swingTrend == BEARISH && !g_bearIDM_Taken && g_bearIDM_Level > 0)
-   {
-      if(highPrice >= g_bearIDM_Level)
-      {
-         bool closeBackOk = !InpIDM_CloseBack || closePrice < g_bearIDM_Level;
-         if(closeBackOk)
-         {
-            g_bearIDM_Taken = true;
-            g_alerts.bearishIDM = true;
-         }
-      }
+      bool ok=!InpIDM_CloseBack || c<g_bearIDM_Level;
+      if(ok) { g_bearIDM_Taken=true; g_alerts.bearishIDM=true; }
    }
 }
 
@@ -1111,109 +984,64 @@ void DetectIDM()
 //+------------------------------------------------------------------+
 void DetectDisplacement()
 {
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-   double openPrice  = iOpen(_Symbol, PERIOD_CURRENT, 1);
-   double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
+   double c=iClose(_Symbol,PERIOD_CURRENT,1), o=iOpen(_Symbol,PERIOD_CURRENT,1);
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1), l=iLow(_Symbol,PERIOD_CURRENT,1);
+   double body=MathAbs(c-o), range=h-l;
+   double avgB=0, avgR=0;
+   int cnt=MathMin(InpDispLength, Bars(_Symbol,PERIOD_CURRENT)-2);
+   for(int i=2; i<=cnt+1; i++)
+   { avgB+=MathAbs(iClose(_Symbol,PERIOD_CURRENT,i)-iOpen(_Symbol,PERIOD_CURRENT,i));
+     avgR+=iHigh(_Symbol,PERIOD_CURRENT,i)-iLow(_Symbol,PERIOD_CURRENT,i); }
+   if(cnt>0) { avgB/=cnt; avgR/=cnt; }
 
-   double candleBody  = MathAbs(closePrice - openPrice);
-   double candleRange = highPrice - lowPrice;
-
-   // Calculate average body and range
-   double avgBody = 0, avgRange = 0;
-   int count = MathMin(InpDispLength, Bars(_Symbol, PERIOD_CURRENT) - 2);
-   for(int i = 2; i <= count + 1; i++)
-   {
-      avgBody  += MathAbs(iClose(_Symbol, PERIOD_CURRENT, i) - iOpen(_Symbol, PERIOD_CURRENT, i));
-      avgRange += iHigh(_Symbol, PERIOD_CURRENT, i) - iLow(_Symbol, PERIOD_CURRENT, i);
-   }
-   if(count > 0) { avgBody /= count; avgRange /= count; }
-
-   bool bullishDisp = closePrice > openPrice &&
-                      candleBody > avgBody * InpDispBodyFactor &&
-                      candleRange > avgRange * InpDispRangeFactor &&
-                      candleRange > g_atr14 * InpDispATR_Factor;
-
-   bool bearishDisp = closePrice < openPrice &&
-                      candleBody > avgBody * InpDispBodyFactor &&
-                      candleRange > avgRange * InpDispRangeFactor &&
-                      candleRange > g_atr14 * InpDispATR_Factor;
-
-   if(bullishDisp) g_alerts.bullishDisplacement = true;
-   if(bearishDisp) g_alerts.bearishDisplacement = true;
+   if(c>o && body>avgB*InpDispBodyFactor && range>avgR*InpDispRangeFactor && range>g_atr14*InpDispATR_Factor)
+      g_alerts.bullishDisplacement=true;
+   if(c<o && body>avgB*InpDispBodyFactor && range>avgR*InpDispRangeFactor && range>g_atr14*InpDispATR_Factor)
+      g_alerts.bearishDisplacement=true;
 }
 
 //+------------------------------------------------------------------+
 //| BREAKER BLOCK DETECTION                                           |
 //+------------------------------------------------------------------+
-int FindLastBearishCandle(int lookback)
-{
-   for(int i = 1; i <= lookback && i < Bars(_Symbol, PERIOD_CURRENT); i++)
-      if(iClose(_Symbol, PERIOD_CURRENT, i) < iOpen(_Symbol, PERIOD_CURRENT, i))
-         return i;
-   return -1;
-}
-
-int FindLastBullishCandle(int lookback)
-{
-   for(int i = 1; i <= lookback && i < Bars(_Symbol, PERIOD_CURRENT); i++)
-      if(iClose(_Symbol, PERIOD_CURRENT, i) > iOpen(_Symbol, PERIOD_CURRENT, i))
-         return i;
-   return -1;
-}
+int FindLastBearishCandle(int lb)
+{ for(int i=1; i<=lb && i<Bars(_Symbol,PERIOD_CURRENT); i++) if(iClose(_Symbol,PERIOD_CURRENT,i)<iOpen(_Symbol,PERIOD_CURRENT,i)) return i; return -1; }
+int FindLastBullishCandle(int lb)
+{ for(int i=1; i<=lb && i<Bars(_Symbol,PERIOD_CURRENT); i++) if(iClose(_Symbol,PERIOD_CURRENT,i)>iOpen(_Symbol,PERIOD_CURRENT,i)) return i; return -1; }
 
 void CreateBreakerBlock(bool bullish, bool isBreaker)
 {
-   int originOffset = bullish ? FindLastBearishCandle(InpBreakerSearchBars) :
-                                FindLastBullishCandle(InpBreakerSearchBars);
-   if(originOffset < 0) return;
-
+   int off=bullish?FindLastBearishCandle(InpBreakerSearchBars):FindLastBullishCandle(InpBreakerSearchBars);
+   if(off<0) return;
    BreakerBlock bb;
-   bb.top       = iHigh(_Symbol, PERIOD_CURRENT, originOffset);
-   bb.bottom    = iLow(_Symbol, PERIOD_CURRENT, originOffset);
-   bb.barTime   = iTime(_Symbol, PERIOD_CURRENT, originOffset);
-   bb.bias      = bullish ? BULLISH : BEARISH;
-   bb.isBreaker = isBreaker;
-   bb.mitigated = false;
-   bb.valid     = true;
-   bb.objName   = ObjName(isBreaker ? "BRK" : "MIT");
-
-   int sz = ArraySize(g_breakerBlocks);
-   ArrayResize(g_breakerBlocks, sz + 1);
-   g_breakerBlocks[sz] = bb;
-
-   while(ArraySize(g_breakerBlocks) > InpMaxBreakerBlocks)
-   {
-      for(int i = 0; i < ArraySize(g_breakerBlocks) - 1; i++)
-         g_breakerBlocks[i] = g_breakerBlocks[i+1];
-      ArrayResize(g_breakerBlocks, ArraySize(g_breakerBlocks) - 1);
-   }
+   bb.top=iHigh(_Symbol,PERIOD_CURRENT,off); bb.bottom=iLow(_Symbol,PERIOD_CURRENT,off);
+   bb.barTime=iTime(_Symbol,PERIOD_CURRENT,off); bb.bias=bullish?BULLISH:BEARISH;
+   bb.isBreaker=isBreaker; bb.mitigated=false; bb.valid=true;
+   bb.boxName=UniqueObjName(isBreaker?"BRK":"MIT"); bb.lblName=bb.boxName+"L";
+   int sz=ArraySize(g_breakerBlocks); ArrayResize(g_breakerBlocks,sz+1); g_breakerBlocks[sz]=bb;
+   while(ArraySize(g_breakerBlocks)>InpMaxBreakerBlocks)
+   { ObjDelete(g_breakerBlocks[0].boxName); ObjDelete(g_breakerBlocks[0].lblName);
+     for(int i=0;i<ArraySize(g_breakerBlocks)-1;i++) g_breakerBlocks[i]=g_breakerBlocks[i+1];
+     ArrayResize(g_breakerBlocks,ArraySize(g_breakerBlocks)-1); }
 }
 
 void DetectBreakerBlocks()
 {
-   bool bullCHoCH = g_alerts.internalBullishCHoCH || g_alerts.swingBullishCHoCH;
-   bool bearCHoCH = g_alerts.internalBearishCHoCH || g_alerts.swingBearishCHoCH;
-   bool bullBOS   = g_alerts.internalBullishBOS || g_alerts.swingBullishBOS;
-   bool bearBOS   = g_alerts.internalBearishBOS || g_alerts.swingBearishBOS;
-
-   if(bullCHoCH) CreateBreakerBlock(true, true);
-   if(bearCHoCH) CreateBreakerBlock(false, true);
-   if(bullBOS)   CreateBreakerBlock(true, false);
-   if(bearBOS)   CreateBreakerBlock(false, false);
+   if(g_alerts.internalBullishCHoCH||g_alerts.swingBullishCHoCH) CreateBreakerBlock(true,true);
+   if(g_alerts.internalBearishCHoCH||g_alerts.swingBearishCHoCH) CreateBreakerBlock(false,true);
+   if(g_alerts.internalBullishBOS||g_alerts.swingBullishBOS)     CreateBreakerBlock(true,false);
+   if(g_alerts.internalBearishBOS||g_alerts.swingBearishBOS)     CreateBreakerBlock(false,false);
 }
 
 void MitigateBreakers()
 {
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-   for(int i = ArraySize(g_breakerBlocks) - 1; i >= 0; i--)
+   double c=iClose(_Symbol,PERIOD_CURRENT,1);
+   for(int i=ArraySize(g_breakerBlocks)-1; i>=0; i--)
    {
       if(!g_breakerBlocks[i].valid) continue;
-      if(g_breakerBlocks[i].bias == BULLISH && closePrice < g_breakerBlocks[i].bottom)
-         g_breakerBlocks[i].valid = false;
-      if(g_breakerBlocks[i].bias == BEARISH && closePrice > g_breakerBlocks[i].top)
-         g_breakerBlocks[i].valid = false;
+      if(g_breakerBlocks[i].bias==BULLISH && c<g_breakerBlocks[i].bottom)
+      { g_breakerBlocks[i].valid=false; ObjDelete(g_breakerBlocks[i].boxName); ObjDelete(g_breakerBlocks[i].lblName); }
+      if(g_breakerBlocks[i].bias==BEARISH && c>g_breakerBlocks[i].top)
+      { g_breakerBlocks[i].valid=false; ObjDelete(g_breakerBlocks[i].boxName); ObjDelete(g_breakerBlocks[i].lblName); }
    }
 }
 
@@ -1222,60 +1050,56 @@ void MitigateBreakers()
 //+------------------------------------------------------------------+
 bool IsInSession(string startStr, string endStr)
 {
-   MqlDateTime dt;
-   TimeToStruct(TimeCurrent(), dt);
-
-   int startH = 0, startM = 0, endH = 0, endM = 0;
-   ParseTime(startStr, startH, startM);
-   ParseTime(endStr, endH, endM);
-
-   int currentMinutes = dt.hour * 60 + dt.min;
-   int startMinutes   = startH * 60 + startM;
-   int endMinutes     = endH * 60 + endM;
-
-   if(startMinutes < endMinutes)
-      return (currentMinutes >= startMinutes && currentMinutes < endMinutes);
-   else
-      return (currentMinutes >= startMinutes || currentMinutes < endMinutes);
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+   int sH=0,sM=0,eH=0,eM=0; ParseTime(startStr,sH,sM); ParseTime(endStr,eH,eM);
+   int cur=dt.hour*60+dt.min, st=sH*60+sM, en=eH*60+eM;
+   return (st<en) ? (cur>=st && cur<en) : (cur>=st || cur<en);
 }
 
-void ParseTime(string timeStr, int &hours, int &minutes)
-{
-   string parts[];
-   int count = StringSplit(timeStr, ':', parts);
-   hours   = (count > 0) ? (int)StringToInteger(parts[0]) : 0;
-   minutes = (count > 1) ? (int)StringToInteger(parts[1]) : 0;
-}
+void ParseTime(string ts, int &h, int &m)
+{ string p[]; int c=StringSplit(ts,':',p); h=(c>0)?(int)StringToInteger(p[0]):0; m=(c>1)?(int)StringToInteger(p[1]):0; }
 
 void UpdateSessionState(SessionState &state, string startStr, string endStr, string name, color clr)
 {
-   bool inSession = IsInSession(startStr, endStr);
-   bool sessionStart = inSession && !state.active;
-   bool sessionEnd   = !inSession && state.active;
+   bool inSess=IsInSession(startStr,endStr);
+   bool sessStart=inSess && !state.active;
+   bool sessEnd=!inSess && state.active;
 
-   if(sessionStart)
+   if(sessStart)
    {
-      state.active    = true;
-      state.high      = iHigh(_Symbol, PERIOD_CURRENT, 0);
-      state.low       = iLow(_Symbol, PERIOD_CURRENT, 0);
-      state.startTime = TimeCurrent();
+      state.active=true;
+      state.high=iHigh(_Symbol,PERIOD_CURRENT,0);
+      state.low=iLow(_Symbol,PERIOD_CURRENT,0);
+      state.startTime=iTime(_Symbol,PERIOD_CURRENT,0);
+      state.boxName=UniqueObjName("Sess"+name);
+      state.lblName=state.boxName+"L";
+      state.highLineName=state.boxName+"HL";
+      state.lowLineName=state.boxName+"LL";
+      state.highLblName=state.boxName+"HB";
+      state.lowLblName=state.boxName+"LB";
    }
-
-   if(inSession && state.active)
+   if(inSess && state.active)
    {
-      double h = iHigh(_Symbol, PERIOD_CURRENT, 0);
-      double l = iLow(_Symbol, PERIOD_CURRENT, 0);
-      if(h > state.high) state.high = h;
-      if(l < state.low || state.low == 0)  state.low = l;
-   }
-
-   if(sessionEnd)
-   {
-      state.active = false;
-      if(InpDrawGraphics)
+      double h=iHigh(_Symbol,PERIOD_CURRENT,0), l=iLow(_Symbol,PERIOD_CURRENT,0);
+      if(h>state.high) state.high=h;
+      if(l<state.low || state.low==0) state.low=l;
+      if(InpDrawGraphics && state.boxName!="")
       {
-         string boxName = ObjName("Session_" + name);
-         DrawSessionBox(boxName, state.startTime, state.high, TimeCurrent(), state.low, clr, name);
+         ObjSetRect(state.boxName, state.startTime, state.high,
+                    iTime(_Symbol,PERIOD_CURRENT,0), state.low, clr, true, 1, true);
+         ObjSetText(state.lblName, state.startTime, state.high, name, clr, 7, ANCHOR_LOWER);
+      }
+   }
+   if(sessEnd)
+   {
+      state.active=false;
+      if(InpDrawGraphics && state.boxName!="")
+      {
+         datetime rightTime=iTime(_Symbol,PERIOD_CURRENT,0)+(datetime)(PeriodSeconds()*20);
+         ObjSetTrend(state.highLineName, state.startTime, state.high, rightTime, state.high, clr, STYLE_DOT, 1);
+         ObjSetTrend(state.lowLineName,  state.startTime, state.low,  rightTime, state.low,  clr, STYLE_DOT, 1);
+         ObjSetText(state.highLblName, rightTime, state.high, name+" H", clr, 7, ANCHOR_LEFT);
+         ObjSetText(state.lowLblName,  rightTime, state.low,  name+" L", clr, 7, ANCHOR_LEFT);
       }
    }
 }
@@ -1292,715 +1116,695 @@ void UpdateSessions()
 //+------------------------------------------------------------------+
 void UpdatePreviousLevels()
 {
-   MqlRates daily[];
-   if(CopyRates(_Symbol, PERIOD_D1, 1, 1, daily) > 0)
-   {
-      g_prevDayHigh  = daily[0].high;
-      g_prevDayLow   = daily[0].low;
-      g_prevDayOpen  = daily[0].open;
-      g_prevDayClose = daily[0].close;
-   }
+   MqlRates d[]; if(CopyRates(_Symbol,PERIOD_D1,1,1,d)>0)
+   { g_prevDayHigh=d[0].high; g_prevDayLow=d[0].low; g_prevDayOpen=d[0].open; g_prevDayClose=d[0].close; }
+   MqlRates w[]; if(CopyRates(_Symbol,PERIOD_W1,1,1,w)>0)
+   { g_prevWeekHigh=w[0].high; g_prevWeekLow=w[0].low; }
+}
 
-   MqlRates weekly[];
-   if(CopyRates(_Symbol, PERIOD_W1, 1, 1, weekly) > 0)
-   {
-      g_prevWeekHigh = weekly[0].high;
-      g_prevWeekLow  = weekly[0].low;
-   }
+void UpdateTrailingExtremes()
+{
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1), l=iLow(_Symbol,PERIOD_CURRENT,1);
+   datetime t=iTime(_Symbol,PERIOD_CURRENT,1);
+   if(g_trailing.top==0 || h>g_trailing.top) { g_trailing.top=h; g_trailing.topTime=t; }
+   if(g_trailing.bottom==0 || l<g_trailing.bottom) { g_trailing.bottom=l; g_trailing.bottomTime=t; }
 }
 
 //+------------------------------------------------------------------+
-//| TRAILING EXTREMES                                                 |
+//| ============== GRAPHICAL DRAWING FUNCTIONS ==============          |
 //+------------------------------------------------------------------+
-void UpdateTrailingExtremes()
-{
-   double h = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double l = iLow(_Symbol, PERIOD_CURRENT, 1);
-   datetime t = iTime(_Symbol, PERIOD_CURRENT, 1);
 
-   if(g_trailing.top == 0 || h > g_trailing.top)
+// Draw BOS/CHoCH structure lines + labels when events fire
+void GfxDrawStructureEvents()
+{
+   datetime now=iTime(_Symbol,PERIOD_CURRENT,0);
+
+   if(g_alerts.internalBullishBOS && g_internalHigh.barTime>0)
    {
-      g_trailing.top = h;
-      g_trailing.topTime = t;
+      string n=UniqueObjName("iBOS"); string nl=n+"L";
+      ObjSetTrend(n, g_internalHigh.barTime, g_internalHigh.currentLevel, now, g_internalHigh.currentLevel,
+                  InpBullColor, STYLE_DASH, 1);
+      datetime mid=g_internalHigh.barTime+(now-g_internalHigh.barTime)/2;
+      ObjSetText(nl, mid, g_internalHigh.currentLevel, "iBOS", InpBullColor, 7, ANCHOR_LOWER);
    }
-   if(g_trailing.bottom == 0 || l < g_trailing.bottom)
+   if(g_alerts.internalBearishBOS && g_internalLow.barTime>0)
    {
-      g_trailing.bottom = l;
-      g_trailing.bottomTime = t;
+      string n=UniqueObjName("iBOS"); string nl=n+"L";
+      ObjSetTrend(n, g_internalLow.barTime, g_internalLow.currentLevel, now, g_internalLow.currentLevel,
+                  InpBearColor, STYLE_DASH, 1);
+      datetime mid=g_internalLow.barTime+(now-g_internalLow.barTime)/2;
+      ObjSetText(nl, mid, g_internalLow.currentLevel, "iBOS", InpBearColor, 7, ANCHOR_UPPER);
    }
+   if(g_alerts.internalBullishCHoCH && g_internalHigh.barTime>0)
+   {
+      string n=UniqueObjName("iCHoCH"); string nl=n+"L";
+      ObjSetTrend(n, g_internalHigh.barTime, g_internalHigh.currentLevel, now, g_internalHigh.currentLevel,
+                  InpBullColor, STYLE_DASH, 1);
+      datetime mid=g_internalHigh.barTime+(now-g_internalHigh.barTime)/2;
+      ObjSetText(nl, mid, g_internalHigh.currentLevel, "CHoCH", InpBullColor, 7, ANCHOR_LOWER);
+   }
+   if(g_alerts.internalBearishCHoCH && g_internalLow.barTime>0)
+   {
+      string n=UniqueObjName("iCHoCH"); string nl=n+"L";
+      ObjSetTrend(n, g_internalLow.barTime, g_internalLow.currentLevel, now, g_internalLow.currentLevel,
+                  InpBearColor, STYLE_DASH, 1);
+      datetime mid=g_internalLow.barTime+(now-g_internalLow.barTime)/2;
+      ObjSetText(nl, mid, g_internalLow.currentLevel, "CHoCH", InpBearColor, 7, ANCHOR_UPPER);
+   }
+   if(g_alerts.swingBullishBOS && g_swingHigh.barTime>0)
+   {
+      string n=UniqueObjName("BOS"); string nl=n+"L";
+      ObjSetTrend(n, g_swingHigh.barTime, g_swingHigh.currentLevel, now, g_swingHigh.currentLevel,
+                  InpBullColor, STYLE_SOLID, 2);
+      datetime mid=g_swingHigh.barTime+(now-g_swingHigh.barTime)/2;
+      ObjSetText(nl, mid, g_swingHigh.currentLevel, "BOS", InpBullColor, 9, ANCHOR_LOWER);
+   }
+   if(g_alerts.swingBearishBOS && g_swingLow.barTime>0)
+   {
+      string n=UniqueObjName("BOS"); string nl=n+"L";
+      ObjSetTrend(n, g_swingLow.barTime, g_swingLow.currentLevel, now, g_swingLow.currentLevel,
+                  InpBearColor, STYLE_SOLID, 2);
+      datetime mid=g_swingLow.barTime+(now-g_swingLow.barTime)/2;
+      ObjSetText(nl, mid, g_swingLow.currentLevel, "BOS", InpBearColor, 9, ANCHOR_UPPER);
+   }
+   if(g_alerts.swingBullishCHoCH && g_swingHigh.barTime>0)
+   {
+      string n=UniqueObjName("CHoCH"); string nl=n+"L";
+      ObjSetTrend(n, g_swingHigh.barTime, g_swingHigh.currentLevel, now, g_swingHigh.currentLevel,
+                  InpBullColor, STYLE_SOLID, 2);
+      datetime mid=g_swingHigh.barTime+(now-g_swingHigh.barTime)/2;
+      ObjSetText(nl, mid, g_swingHigh.currentLevel, "CHoCH", InpBullColor, 9, ANCHOR_LOWER);
+   }
+   if(g_alerts.swingBearishCHoCH && g_swingLow.barTime>0)
+   {
+      string n=UniqueObjName("CHoCH"); string nl=n+"L";
+      ObjSetTrend(n, g_swingLow.barTime, g_swingLow.currentLevel, now, g_swingLow.currentLevel,
+                  InpBearColor, STYLE_SOLID, 2);
+      datetime mid=g_swingLow.barTime+(now-g_swingLow.barTime)/2;
+      ObjSetText(nl, mid, g_swingLow.currentLevel, "CHoCH", InpBearColor, 9, ANCHOR_UPPER);
+   }
+}
+
+// Draw swing point labels: HH, HL, LH, LL
+void GfxDrawSwingPointLabels()
+{
+   // When a new swing high/low forms, label it
+   static double lastSwingH=0, lastSwingL=0;
+
+   if(g_swingHigh.currentLevel!=lastSwingH && g_swingHigh.currentLevel>0 && g_swingHigh.barTime>0)
+   {
+      lastSwingH=g_swingHigh.currentLevel;
+      string tag=(g_swingHigh.currentLevel>g_swingHigh.lastLevel && g_swingHigh.lastLevel>0) ? "HH" : "LH";
+      string n=UniqueObjName("SwPt");
+      ObjSetText(n, g_swingHigh.barTime, g_swingHigh.currentLevel, tag, InpBearColor, 8, ANCHOR_LOWER);
+   }
+   if(g_swingLow.currentLevel!=lastSwingL && g_swingLow.currentLevel>0 && g_swingLow.barTime>0)
+   {
+      lastSwingL=g_swingLow.currentLevel;
+      string tag=(g_swingLow.currentLevel<g_swingLow.lastLevel && g_swingLow.lastLevel>0) ? "LL" : "HL";
+      string n=UniqueObjName("SwPt");
+      ObjSetText(n, g_swingLow.barTime, g_swingLow.currentLevel, tag, InpBullColor, 8, ANCHOR_UPPER);
+   }
+}
+
+// Update Order Block rectangles - extend right edge to current bar each tick
+void GfxUpdateOrderBlocks()
+{
+   datetime now=iTime(_Symbol,PERIOD_CURRENT,0);
+   for(int i=0; i<ArraySize(g_internalOB); i++)
+   {
+      if(!g_internalOB[i].valid) continue;
+      color clr=(g_internalOB[i].bias==BULLISH)?InpOB_BullColor:InpOB_BearColor;
+      ObjSetRect(g_internalOB[i].boxName, g_internalOB[i].barTime, g_internalOB[i].top,
+                 now, g_internalOB[i].bottom, clr, true, 1, true);
+      string tag=(g_internalOB[i].bias==BULLISH)?"iOB+":"iOB-";
+      double mid=(g_internalOB[i].top+g_internalOB[i].bottom)/2.0;
+      ObjSetText(g_internalOB[i].lblName, g_internalOB[i].barTime, mid, tag, clr, 7, ANCHOR_RIGHT);
+   }
+   for(int i=0; i<ArraySize(g_swingOB); i++)
+   {
+      if(!g_swingOB[i].valid) continue;
+      color clr=(g_swingOB[i].bias==BULLISH)?InpOB_BullColor:InpOB_BearColor;
+      ObjSetRect(g_swingOB[i].boxName, g_swingOB[i].barTime, g_swingOB[i].top,
+                 now, g_swingOB[i].bottom, clr, true, 2, true);
+      string tag=(g_swingOB[i].bias==BULLISH)?"OB+":"OB-";
+      double mid=(g_swingOB[i].top+g_swingOB[i].bottom)/2.0;
+      ObjSetText(g_swingOB[i].lblName, g_swingOB[i].barTime, mid, tag, clr, 8, ANCHOR_RIGHT);
+   }
+}
+
+// Update FVG rectangles - extend right
+void GfxUpdateFVGs()
+{
+   datetime now=iTime(_Symbol,PERIOD_CURRENT,0);
+   datetime ext=now+(datetime)(PeriodSeconds()*InpFVGExtendBars);
+   for(int i=0; i<ArraySize(g_fvg); i++)
+   {
+      if(!g_fvg[i].valid) continue;
+      color clr=(g_fvg[i].bias==BULLISH)?InpFVG_BullColor:InpFVG_BearColor;
+      ObjSetRect(g_fvg[i].boxName, g_fvg[i].barTime, g_fvg[i].top,
+                 ext, g_fvg[i].bottom, clr, true, 1, true);
+      string tag=(g_fvg[i].bias==BULLISH)?"FVG+":"FVG-";
+      double mid=(g_fvg[i].top+g_fvg[i].bottom)/2.0;
+      ObjSetText(g_fvg[i].lblName, g_fvg[i].barTime, mid, tag, clr, 7, ANCHOR_RIGHT);
+   }
+}
+
+// Update Breaker Block rectangles - extend right
+void GfxUpdateBreakerBlocks()
+{
+   datetime now=iTime(_Symbol,PERIOD_CURRENT,0);
+   for(int i=0; i<ArraySize(g_breakerBlocks); i++)
+   {
+      if(!g_breakerBlocks[i].valid) continue;
+      color clr;
+      string tag;
+      if(g_breakerBlocks[i].isBreaker)
+      { clr=(g_breakerBlocks[i].bias==BULLISH)?InpBreakerBullColor:InpBreakerBearColor;
+        tag=(g_breakerBlocks[i].bias==BULLISH)?"B-BRK":"S-BRK"; }
+      else
+      { clr=(g_breakerBlocks[i].bias==BULLISH)?clrRoyalBlue:clrOrangeRed;
+        tag=(g_breakerBlocks[i].bias==BULLISH)?"B-MIT":"S-MIT"; }
+      ObjSetRect(g_breakerBlocks[i].boxName, g_breakerBlocks[i].barTime, g_breakerBlocks[i].top,
+                 now, g_breakerBlocks[i].bottom, clr, true, 1, true);
+      double lp=(g_breakerBlocks[i].bias==BULLISH)?g_breakerBlocks[i].bottom:g_breakerBlocks[i].top;
+      ObjSetText(g_breakerBlocks[i].lblName, g_breakerBlocks[i].barTime, lp, tag, clr, 7,
+                 (g_breakerBlocks[i].bias==BULLISH)?ANCHOR_UPPER:ANCHOR_LOWER);
+   }
+}
+
+// Update EQH/EQL lines
+void GfxUpdateEqualLevels()
+{
+   for(int i=0; i<ArraySize(g_equalHighs); i++)
+   {
+      if(!g_equalHighs[i].valid) continue;
+      ObjSetTrend(g_equalHighs[i].lineName, g_equalHighs[i].time1, g_equalHighs[i].level,
+                  g_equalHighs[i].time2, g_equalHighs[i].level, InpBearColor, STYLE_DOT, 1);
+      datetime mid=g_equalHighs[i].time1+(g_equalHighs[i].time2-g_equalHighs[i].time1)/2;
+      ObjSetText(g_equalHighs[i].lblName, mid, g_equalHighs[i].level, "EQH", InpBearColor, 7, ANCHOR_LOWER);
+   }
+   for(int i=0; i<ArraySize(g_equalLows); i++)
+   {
+      if(!g_equalLows[i].valid) continue;
+      ObjSetTrend(g_equalLows[i].lineName, g_equalLows[i].time1, g_equalLows[i].level,
+                  g_equalLows[i].time2, g_equalLows[i].level, InpBullColor, STYLE_DOT, 1);
+      datetime mid=g_equalLows[i].time1+(g_equalLows[i].time2-g_equalLows[i].time1)/2;
+      ObjSetText(g_equalLows[i].lblName, mid, g_equalLows[i].level, "EQL", InpBullColor, 7, ANCHOR_UPPER);
+   }
+}
+
+// Sessions are drawn/updated in UpdateSessionState
+void GfxUpdateSessions() { /* handled in UpdateSessionState */ }
+
+// Previous Day/Week Levels
+void GfxUpdatePreviousLevels()
+{
+   int d=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   if(g_prevDayHigh>0)
+   {
+      ObjSetHLine(PREFIX+"PDH", g_prevDayHigh, clrGray, STYLE_DOT, 1);
+      ObjSetHLine(PREFIX+"PDL", g_prevDayLow,  clrGray, STYLE_DOT, 1);
+      ObjSetHLine(PREFIX+"PDO", g_prevDayOpen, clrDarkGray, STYLE_DOT, 1);
+      ObjSetHLine(PREFIX+"PDC", g_prevDayClose,clrDarkGray, STYLE_DOT, 1);
+      // Labels using OBJ_TEXT at the right edge of the chart
+      datetime rt=iTime(_Symbol,PERIOD_CURRENT,0)+(datetime)(PeriodSeconds()*5);
+      ObjSetText(PREFIX+"PDH_L", rt, g_prevDayHigh, "PDH "+DoubleToString(g_prevDayHigh,d), clrGray, 7, ANCHOR_LEFT);
+      ObjSetText(PREFIX+"PDL_L", rt, g_prevDayLow,  "PDL "+DoubleToString(g_prevDayLow,d),  clrGray, 7, ANCHOR_LEFT);
+      ObjSetText(PREFIX+"PDO_L", rt, g_prevDayOpen, "PDO "+DoubleToString(g_prevDayOpen,d),  clrDarkGray, 7, ANCHOR_LEFT);
+      ObjSetText(PREFIX+"PDC_L", rt, g_prevDayClose,"PDC "+DoubleToString(g_prevDayClose,d), clrDarkGray, 7, ANCHOR_LEFT);
+   }
+   if(g_prevWeekHigh>0)
+   {
+      ObjSetHLine(PREFIX+"PWH", g_prevWeekHigh, clrSilver, STYLE_DOT, 1);
+      ObjSetHLine(PREFIX+"PWL", g_prevWeekLow,  clrSilver, STYLE_DOT, 1);
+      datetime rt=iTime(_Symbol,PERIOD_CURRENT,0)+(datetime)(PeriodSeconds()*5);
+      ObjSetText(PREFIX+"PWH_L", rt, g_prevWeekHigh, "PWH "+DoubleToString(g_prevWeekHigh,d), clrSilver, 7, ANCHOR_LEFT);
+      ObjSetText(PREFIX+"PWL_L", rt, g_prevWeekLow,  "PWL "+DoubleToString(g_prevWeekLow,d),  clrSilver, 7, ANCHOR_LEFT);
+   }
+}
+
+// Strong / Weak High / Low
+void GfxUpdateStrongWeakLevels()
+{
+   if(g_trailing.top==0 || g_trailing.bottom==0) return;
+   string hTag=(g_swingTrend==BEARISH)?"Strong High":"Weak High";
+   string lTag=(g_swingTrend==BULLISH)?"Strong Low":"Weak Low";
+   color hClr=(g_swingTrend==BEARISH)?InpBearColor:clrOrange;
+   color lClr=(g_swingTrend==BULLISH)?InpBullColor:clrOrange;
+
+   ObjSetHLine(PREFIX+"SWH", g_trailing.top, hClr, STYLE_SOLID, 1);
+   ObjSetHLine(PREFIX+"SWL", g_trailing.bottom, lClr, STYLE_SOLID, 1);
+
+   datetime rt=iTime(_Symbol,PERIOD_CURRENT,0)+(datetime)(PeriodSeconds()*5);
+   ObjSetText(PREFIX+"SWH_L", rt, g_trailing.top, hTag, hClr, 8, ANCHOR_LEFT);
+   ObjSetText(PREFIX+"SWL_L", rt, g_trailing.bottom, lTag, lClr, 8, ANCHOR_LEFT);
+}
+
+// IDM level lines
+void GfxUpdateIDMLines()
+{
+   datetime rt=iTime(_Symbol,PERIOD_CURRENT,0)+(datetime)(PeriodSeconds()*10);
+
+   // Bullish IDM
+   if(!g_bullIDM_Taken && g_bullIDM_Level>0 && g_bullIDM_Time>0)
+   {
+      ObjSetTrend(PREFIX+"IDM_BullLine", g_bullIDM_Time, g_bullIDM_Level, rt, g_bullIDM_Level,
+                  InpIDMColor, STYLE_DASH, 1);
+      ObjSetText(PREFIX+"IDM_BullLbl", rt, g_bullIDM_Level, "IDM", InpIDMColor, 7, ANCHOR_LEFT);
+   }
+   else
+   {
+      ObjDelete(PREFIX+"IDM_BullLine"); ObjDelete(PREFIX+"IDM_BullLbl");
+   }
+
+   // Bearish IDM
+   if(!g_bearIDM_Taken && g_bearIDM_Level>0 && g_bearIDM_Time>0)
+   {
+      ObjSetTrend(PREFIX+"IDM_BearLine", g_bearIDM_Time, g_bearIDM_Level, rt, g_bearIDM_Level,
+                  InpIDMColor, STYLE_DASH, 1);
+      ObjSetText(PREFIX+"IDM_BearLbl", rt, g_bearIDM_Level, "IDM", InpIDMColor, 7, ANCHOR_LEFT);
+   }
+   else
+   {
+      ObjDelete(PREFIX+"IDM_BearLine"); ObjDelete(PREFIX+"IDM_BearLbl");
+   }
+
+   // IDM Taken labels
+   if(g_alerts.bullishIDM)
+   {
+      datetime t=iTime(_Symbol,PERIOD_CURRENT,1);
+      string n=UniqueObjName("IDMTkn");
+      ObjSetText(n, t, iLow(_Symbol,PERIOD_CURRENT,1), "IDM Taken", InpIDMColor, 8, ANCHOR_UPPER);
+   }
+   if(g_alerts.bearishIDM)
+   {
+      datetime t=iTime(_Symbol,PERIOD_CURRENT,1);
+      string n=UniqueObjName("IDMTkn");
+      ObjSetText(n, t, iHigh(_Symbol,PERIOD_CURRENT,1), "IDM Taken", InpIDMColor, 8, ANCHOR_LOWER);
+   }
+}
+
+// Displacement candle labels
+void GfxDrawDisplacementLabels()
+{
+   datetime t=iTime(_Symbol,PERIOD_CURRENT,1);
+   if(g_alerts.bullishDisplacement)
+   {
+      string n=UniqueObjName("DISP");
+      ObjSetText(n, t, iLow(_Symbol,PERIOD_CURRENT,1), "DISP", InpBullColor, 8, ANCHOR_UPPER);
+   }
+   if(g_alerts.bearishDisplacement)
+   {
+      string n=UniqueObjName("DISP");
+      ObjSetText(n, t, iHigh(_Symbol,PERIOD_CURRENT,1), "DISP", InpBearColor, 8, ANCHOR_LOWER);
+   }
+   // MSS labels when displacement + CHoCH align
+   bool bullMSS=g_alerts.bullishDisplacement && (g_alerts.internalBullishCHoCH||g_alerts.swingBullishCHoCH);
+   bool bearMSS=g_alerts.bearishDisplacement && (g_alerts.internalBearishCHoCH||g_alerts.swingBearishCHoCH);
+   if(bullMSS)
+   {
+      string n=UniqueObjName("MSS");
+      ObjSetText(n, t, iLow(_Symbol,PERIOD_CURRENT,1), "MSS", InpBullColor, 9, ANCHOR_UPPER);
+   }
+   if(bearMSS)
+   {
+      string n=UniqueObjName("MSS");
+      ObjSetText(n, t, iHigh(_Symbol,PERIOD_CURRENT,1), "MSS", InpBearColor, 9, ANCHOR_LOWER);
+   }
+}
+
+// Dashboard
+void GfxUpdateDashboard()
+{
+   int x=InpDashX, y=InpDashY;
+   ObjSetRectLabel(PREFIX+"DashBG", x, y, 230, 275, InpDashBG, clrSlateGray);
+
+   string sn="";
+   switch(InpStrategy)
+   {
+      case STRATEGY_1_CHOCH_OB_RETEST:  sn="1.CHoCH+OB(85%)"; break;
+      case STRATEGY_2_SWEEP_BOS:        sn="2.Sweep+BOS(82%)"; break;
+      case STRATEGY_3_IDM_CONTINUATION: sn="3.IDM Cont(80%)";  break;
+      case STRATEGY_4_SWING_BOS_RETEST: sn="4.BOS Ret(78%)";   break;
+      case STRATEGY_5_EQH_EQL_FADE:     sn="5.EQH/EQL(75%)";  break;
+      case STRATEGY_6_SESSION_LIQ_GRAB: sn="6.SessGrab(74%)";  break;
+      case STRATEGY_7_BREAKER_ENTRY:    sn="7.Breaker(72%)";   break;
+      case STRATEGY_8_PDH_PDL_SWEEP:    sn="8.PDH/PDL(70%)";   break;
+      case STRATEGY_9_FVG_FILL:         sn="9.FVGFill(68%)";   break;
+      case STRATEGY_10_STRONG_WEAK:     sn="10.S/W HL(65%)";   break;
+   }
+
+   ObjSetLabel(PREFIX+"D_Title",   x+10, y+8,   "SMC+ Dashboard", clrWhite, 10);
+   ObjSetLabel(PREFIX+"D_Strat",   x+10, y+30,  "Strategy: "+sn, clrGold, 8);
+
+   string sw=(g_swingTrend==BULLISH)?"Bullish":(g_swingTrend==BEARISH)?"Bearish":"Neutral";
+   color sc=(g_swingTrend==BULLISH)?InpBullColor:(g_swingTrend==BEARISH)?InpBearColor:clrGray;
+   ObjSetLabel(PREFIX+"D_Swing",   x+10, y+50,  "Swing: "+sw, sc, 8);
+
+   string it=(g_internalTrend==BULLISH)?"Bullish":(g_internalTrend==BEARISH)?"Bearish":"Neutral";
+   color ic=(g_internalTrend==BULLISH)?InpBullColor:(g_internalTrend==BEARISH)?InpBearColor:clrGray;
+   ObjSetLabel(PREFIX+"D_Int",     x+10, y+70,  "Internal: "+it, ic, 8);
+
+   string ss="None"; color ssc=clrGray;
+   if(g_asiaSession.active)   {ss="Asia"; ssc=InpAsiaColor;}
+   if(g_londonSession.active) {ss="London"; ssc=InpLondonColor;}
+   if(g_nySession.active)     {ss="New York"; ssc=InpNYColor;}
+   ObjSetLabel(PREFIX+"D_Sess",    x+10, y+90,  "Session: "+ss, ssc, 8);
+
+   int obc=0;
+   for(int i=0;i<ArraySize(g_internalOB);i++) if(g_internalOB[i].valid) obc++;
+   for(int i=0;i<ArraySize(g_swingOB);i++) if(g_swingOB[i].valid) obc++;
+   ObjSetLabel(PREFIX+"D_OB",      x+10, y+110, "Order Blocks: "+IntegerToString(obc), clrSilver, 8);
+
+   int fc=0; for(int i=0;i<ArraySize(g_fvg);i++) if(g_fvg[i].valid) fc++;
+   ObjSetLabel(PREFIX+"D_FVG",     x+10, y+130, "FVGs: "+IntegerToString(fc), clrSilver, 8);
+
+   int bc=0; for(int i=0;i<ArraySize(g_breakerBlocks);i++) if(g_breakerBlocks[i].valid) bc++;
+   ObjSetLabel(PREFIX+"D_BRK",     x+10, y+150, "Breakers: "+IntegerToString(bc), clrSilver, 8);
+
+   string le="None"; color lec=clrGray;
+   if(g_alerts.internalBullishCHoCH)      {le="Bull iCHoCH"; lec=InpBullColor;}
+   else if(g_alerts.internalBearishCHoCH) {le="Bear iCHoCH"; lec=InpBearColor;}
+   else if(g_alerts.swingBullishBOS)      {le="Bull BOS"; lec=InpBullColor;}
+   else if(g_alerts.swingBearishBOS)      {le="Bear BOS"; lec=InpBearColor;}
+   else if(g_alerts.bullishSweep)         {le="SSL Sweep"; lec=InpSweepBullColor;}
+   else if(g_alerts.bearishSweep)         {le="BSL Sweep"; lec=InpSweepBearColor;}
+   else if(g_alerts.bullishIDM)           {le="Bull IDM"; lec=InpIDMColor;}
+   else if(g_alerts.bearishIDM)           {le="Bear IDM"; lec=InpIDMColor;}
+   else if(g_alerts.bullishDisplacement)  {le="Bull DISP"; lec=InpBullColor;}
+   else if(g_alerts.bearishDisplacement)  {le="Bear DISP"; lec=InpBearColor;}
+   ObjSetLabel(PREFIX+"D_Event",   x+10, y+170, "Last Event: "+le, lec, 8);
+
+   int d=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   string pdl_s="---";
+   if(g_prevDayHigh>0) pdl_s="PDH:"+DoubleToString(g_prevDayHigh,d)+" PDL:"+DoubleToString(g_prevDayLow,d);
+   ObjSetLabel(PREFIX+"D_PDH",     x+10, y+190, pdl_s, clrSilver, 7);
+
+   int tc=CountOpenTrades();
+   ObjSetLabel(PREFIX+"D_Trades",  x+10, y+210, "Open Trades: "+IntegerToString(tc), tc>0?clrGold:clrSilver, 8);
+
+   double pnl=0;
+   for(int i=PositionsTotal()-1; i>=0; i--)
+      if(g_posInfo.SelectByIndex(i) && g_posInfo.Symbol()==_Symbol && g_posInfo.Magic()==InpMagicNumber)
+         pnl+=g_posInfo.Profit();
+   ObjSetLabel(PREFIX+"D_PnL",     x+10, y+230, "Session P&L: "+DoubleToString(pnl,2), pnl>=0?InpBullColor:InpBearColor, 8);
+
+   string sw_lbl=(g_swingTrend==BULLISH)?"UP":(g_swingTrend==BEARISH)?"DN":"--";
+   ObjSetLabel(PREFIX+"D_Pulse",   x+10, y+250, "Pulse: Swing="+sw_lbl+" Int="+(string)((g_internalTrend==BULLISH)?"UP":(g_internalTrend==BEARISH)?"DN":"--"), clrSilver, 7);
+}
+
+void GfxDrawTradeArrow(int dir, double price, datetime t)
+{
+   string n=UniqueObjName("Trd");
+   int code=(dir==BULLISH)?233:234;
+   ObjSetArrow(n, t, price, code, (dir==BULLISH)?InpBullColor:InpBearColor, 3);
 }
 
 //+------------------------------------------------------------------+
 //| ================ STRATEGY IMPLEMENTATIONS ================        |
 //+------------------------------------------------------------------+
 
-//+------------------------------------------------------------------+
-//| Strategy 1: CHoCH + Internal Order Block Retest (85%)             |
-//+------------------------------------------------------------------+
 TradeSignal Strategy1_CHoCH_OB()
 {
-   TradeSignal sig;
-   sig.valid = false;
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
 
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   // Check for new internal CHoCH
    if(g_alerts.internalBullishCHoCH || g_alerts.internalBearishCHoCH)
    {
-      // Find the internal OB that preceded the CHoCH
-      for(int i = ArraySize(g_internalOB) - 1; i >= 0; i--)
+      for(int i=ArraySize(g_internalOB)-1; i>=0; i--)
       {
          if(!g_internalOB[i].valid) continue;
-
-         if(g_alerts.internalBullishCHoCH && g_internalOB[i].bias == BULLISH)
-         {
-            g_chochPending    = true;
-            g_chochDirection  = BULLISH;
-            g_chochOB_Top     = g_internalOB[i].top;
-            g_chochOB_Bottom  = g_internalOB[i].bottom;
-            g_chochOB_Time    = g_internalOB[i].barTime;
-            g_chochBar        = g_barCount;
-            break;
-         }
-         if(g_alerts.internalBearishCHoCH && g_internalOB[i].bias == BEARISH)
-         {
-            g_chochPending    = true;
-            g_chochDirection  = BEARISH;
-            g_chochOB_Top     = g_internalOB[i].top;
-            g_chochOB_Bottom  = g_internalOB[i].bottom;
-            g_chochOB_Time    = g_internalOB[i].barTime;
-            g_chochBar        = g_barCount;
-            break;
-         }
+         if(g_alerts.internalBullishCHoCH && g_internalOB[i].bias==BULLISH)
+         { g_chochPending=true; g_chochDirection=BULLISH;
+           g_chochOB_Top=g_internalOB[i].top; g_chochOB_Bottom=g_internalOB[i].bottom;
+           g_chochOB_Time=g_internalOB[i].barTime; g_chochBar=g_barCount; break; }
+         if(g_alerts.internalBearishCHoCH && g_internalOB[i].bias==BEARISH)
+         { g_chochPending=true; g_chochDirection=BEARISH;
+           g_chochOB_Top=g_internalOB[i].top; g_chochOB_Bottom=g_internalOB[i].bottom;
+           g_chochOB_Time=g_internalOB[i].barTime; g_chochBar=g_barCount; break; }
       }
    }
-
-   // Wait for price to retest the OB zone
-   if(g_chochPending && g_barCount - g_chochBar <= 30)
+   if(g_chochPending && g_barCount-g_chochBar<=30)
    {
-      double lowPrice  = iLow(_Symbol, PERIOD_CURRENT, 1);
-      double highPrice = iHigh(_Symbol, PERIOD_CURRENT, 1);
-      double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-      if(g_chochDirection == BULLISH)
-      {
-         // Price pulled back into bullish OB
-         if(lowPrice <= g_chochOB_Top && lowPrice >= g_chochOB_Bottom && closePrice > g_chochOB_Bottom)
-         {
-            sig.direction  = BULLISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-            sig.stopLoss   = g_chochOB_Bottom - g_atr14 * 0.2;
-            double riskDist = sig.entryPrice - sig.stopLoss;
-            sig.takeProfit = sig.entryPrice + riskDist * InpRR_Ratio;
-            sig.reason     = "S1: CHoCH+OB Retest BUY";
-            sig.valid      = true;
-            g_chochPending = false;
-         }
-      }
-      else if(g_chochDirection == BEARISH)
-      {
-         if(highPrice >= g_chochOB_Bottom && highPrice <= g_chochOB_Top && closePrice < g_chochOB_Top)
-         {
-            sig.direction  = BEARISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-            sig.stopLoss   = g_chochOB_Top + g_atr14 * 0.2;
-            double riskDist = sig.stopLoss - sig.entryPrice;
-            sig.takeProfit = sig.entryPrice - riskDist * InpRR_Ratio;
-            sig.reason     = "S1: CHoCH+OB Retest SELL";
-            sig.valid      = true;
-            g_chochPending = false;
-         }
-      }
+      double l=iLow(_Symbol,PERIOD_CURRENT,1), h=iHigh(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+      if(g_chochDirection==BULLISH && l<=g_chochOB_Top && l>=g_chochOB_Bottom && c>g_chochOB_Bottom)
+      { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        sig.stopLoss=g_chochOB_Bottom-g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*InpRR_Ratio;
+        sig.reason="S1:CHoCH+OB BUY"; sig.valid=true; g_chochPending=false; }
+      if(g_chochDirection==BEARISH && h>=g_chochOB_Bottom && h<=g_chochOB_Top && c<g_chochOB_Top)
+      { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+        sig.stopLoss=g_chochOB_Top+g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*InpRR_Ratio;
+        sig.reason="S1:CHoCH+OB SELL"; sig.valid=true; g_chochPending=false; }
    }
-   else if(g_chochPending && g_barCount - g_chochBar > 30)
-   {
-      g_chochPending = false;
-   }
-
+   else if(g_chochPending && g_barCount-g_chochBar>30) g_chochPending=false;
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 2: SSL/BSL Sweep + BOS Continuation (82%)                |
-//+------------------------------------------------------------------+
 TradeSignal Strategy2_SweepBOS()
 {
-   TradeSignal sig;
-   sig.valid = false;
-
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   // Detect sweep events
-   if(g_alerts.bullishSweep)
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   if(g_alerts.bullishSweep) { g_sweepPending=true; g_sweepDirection=BULLISH; g_sweepLevel=iLow(_Symbol,PERIOD_CURRENT,1); g_sweepBar=g_barCount; }
+   if(g_alerts.bearishSweep) { g_sweepPending=true; g_sweepDirection=BEARISH; g_sweepLevel=iHigh(_Symbol,PERIOD_CURRENT,1); g_sweepBar=g_barCount; }
+   if(g_sweepPending && g_barCount-g_sweepBar<=20)
    {
-      g_sweepPending   = true;
-      g_sweepDirection = BULLISH;
-      g_sweepLevel     = iLow(_Symbol, PERIOD_CURRENT, 1);
-      g_sweepBar       = g_barCount;
+      if(g_sweepDirection==BULLISH && (g_alerts.internalBullishBOS||g_alerts.swingBullishBOS))
+      { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        sig.stopLoss=g_sweepLevel-g_atr14*0.3;
+        sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*InpRR_Ratio;
+        sig.reason="S2:Sweep+BOS BUY"; sig.valid=true; g_sweepPending=false; }
+      if(g_sweepDirection==BEARISH && (g_alerts.internalBearishBOS||g_alerts.swingBearishBOS))
+      { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+        sig.stopLoss=g_sweepLevel+g_atr14*0.3;
+        sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*InpRR_Ratio;
+        sig.reason="S2:Sweep+BOS SELL"; sig.valid=true; g_sweepPending=false; }
    }
-   if(g_alerts.bearishSweep)
-   {
-      g_sweepPending   = true;
-      g_sweepDirection = BEARISH;
-      g_sweepLevel     = iHigh(_Symbol, PERIOD_CURRENT, 1);
-      g_sweepBar       = g_barCount;
-   }
-
-   // Wait for BOS confirmation after sweep
-   if(g_sweepPending && g_barCount - g_sweepBar <= 20)
-   {
-      if(g_sweepDirection == BULLISH && (g_alerts.internalBullishBOS || g_alerts.swingBullishBOS))
-      {
-         sig.direction  = BULLISH;
-         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-         sig.stopLoss   = g_sweepLevel - g_atr14 * 0.3;
-         double riskDist = sig.entryPrice - sig.stopLoss;
-         sig.takeProfit = sig.entryPrice + riskDist * InpRR_Ratio;
-         sig.reason     = "S2: SSL Sweep+BOS BUY";
-         sig.valid      = true;
-         g_sweepPending = false;
-      }
-      if(g_sweepDirection == BEARISH && (g_alerts.internalBearishBOS || g_alerts.swingBearishBOS))
-      {
-         sig.direction  = BEARISH;
-         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-         sig.stopLoss   = g_sweepLevel + g_atr14 * 0.3;
-         double riskDist = sig.stopLoss - sig.entryPrice;
-         sig.takeProfit = sig.entryPrice - riskDist * InpRR_Ratio;
-         sig.reason     = "S2: BSL Sweep+BOS SELL";
-         sig.valid      = true;
-         g_sweepPending = false;
-      }
-   }
-   else if(g_sweepPending && g_barCount - g_sweepBar > 20)
-   {
-      g_sweepPending = false;
-   }
-
+   else if(g_sweepPending && g_barCount-g_sweepBar>20) g_sweepPending=false;
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 3: IDM Taken -> Swing Continuation (80%)                 |
-//+------------------------------------------------------------------+
 TradeSignal Strategy3_IDM()
 {
-   TradeSignal sig;
-   sig.valid = false;
-
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   if(g_alerts.bullishIDM && g_swingTrend == BULLISH)
-   {
-      sig.direction  = BULLISH;
-      sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      sig.stopLoss   = iLow(_Symbol, PERIOD_CURRENT, 1) - g_atr14 * 0.3;
-      double riskDist = sig.entryPrice - sig.stopLoss;
-      sig.takeProfit = sig.entryPrice + riskDist * InpRR_Ratio;
-      sig.reason     = "S3: IDM Taken BUY (Swing Bull)";
-      sig.valid      = true;
-   }
-
-   if(g_alerts.bearishIDM && g_swingTrend == BEARISH)
-   {
-      sig.direction  = BEARISH;
-      sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      sig.stopLoss   = iHigh(_Symbol, PERIOD_CURRENT, 1) + g_atr14 * 0.3;
-      double riskDist = sig.stopLoss - sig.entryPrice;
-      sig.takeProfit = sig.entryPrice - riskDist * InpRR_Ratio;
-      sig.reason     = "S3: IDM Taken SELL (Swing Bear)";
-      sig.valid      = true;
-   }
-
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   if(g_alerts.bullishIDM && g_swingTrend==BULLISH)
+   { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+     sig.stopLoss=iLow(_Symbol,PERIOD_CURRENT,1)-g_atr14*0.3;
+     sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*InpRR_Ratio;
+     sig.reason="S3:IDM BUY"; sig.valid=true; }
+   if(g_alerts.bearishIDM && g_swingTrend==BEARISH)
+   { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+     sig.stopLoss=iHigh(_Symbol,PERIOD_CURRENT,1)+g_atr14*0.3;
+     sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*InpRR_Ratio;
+     sig.reason="S3:IDM SELL"; sig.valid=true; }
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 4: Swing BOS Retest (78%)                                |
-//+------------------------------------------------------------------+
 TradeSignal Strategy4_SwingBOS()
 {
-   TradeSignal sig;
-   sig.valid = false;
-
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   // Detect new swing BOS
-   if(g_alerts.swingBullishBOS && g_swingTrend == BULLISH)
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   if(g_alerts.swingBullishBOS && g_swingTrend==BULLISH)
+   { g_bosRetestPending=true; g_bosDirection=BULLISH; g_bosLevel=g_swingHigh.currentLevel; g_bosBar=g_barCount; }
+   if(g_alerts.swingBearishBOS && g_swingTrend==BEARISH)
+   { g_bosRetestPending=true; g_bosDirection=BEARISH; g_bosLevel=g_swingLow.currentLevel; g_bosBar=g_barCount; }
+   if(g_bosRetestPending && g_barCount-g_bosBar<=40)
    {
-      g_bosRetestPending = true;
-      g_bosDirection     = BULLISH;
-      g_bosLevel         = g_swingHigh.currentLevel;
-      g_bosBar           = g_barCount;
+      double l=iLow(_Symbol,PERIOD_CURRENT,1), h=iHigh(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+      if(g_bosDirection==BULLISH && l<=g_bosLevel+g_atr14*0.5 && l>=g_bosLevel-g_atr14*0.5 && c>g_bosLevel)
+      { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        sig.stopLoss=l-g_atr14*0.5; sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*InpRR_Ratio;
+        sig.reason="S4:BOS Retest BUY"; sig.valid=true; g_bosRetestPending=false; }
+      if(g_bosDirection==BEARISH && h>=g_bosLevel-g_atr14*0.5 && h<=g_bosLevel+g_atr14*0.5 && c<g_bosLevel)
+      { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+        sig.stopLoss=h+g_atr14*0.5; sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*InpRR_Ratio;
+        sig.reason="S4:BOS Retest SELL"; sig.valid=true; g_bosRetestPending=false; }
    }
-   if(g_alerts.swingBearishBOS && g_swingTrend == BEARISH)
-   {
-      g_bosRetestPending = true;
-      g_bosDirection     = BEARISH;
-      g_bosLevel         = g_swingLow.currentLevel;
-      g_bosBar           = g_barCount;
-   }
-
-   // Wait for retest
-   if(g_bosRetestPending && g_barCount - g_bosBar <= 40)
-   {
-      double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-      double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-      double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-      if(g_bosDirection == BULLISH)
-      {
-         // Price retraces to the broken level and rejects
-         if(lowPrice <= g_bosLevel + g_atr14 * 0.5 && lowPrice >= g_bosLevel - g_atr14 * 0.5 && closePrice > g_bosLevel)
-         {
-            sig.direction  = BULLISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-            sig.stopLoss   = lowPrice - g_atr14 * 0.5;
-            double riskDist = sig.entryPrice - sig.stopLoss;
-            sig.takeProfit = sig.entryPrice + riskDist * InpRR_Ratio;
-            sig.reason     = "S4: Swing BOS Retest BUY";
-            sig.valid      = true;
-            g_bosRetestPending = false;
-         }
-      }
-      else if(g_bosDirection == BEARISH)
-      {
-         if(highPrice >= g_bosLevel - g_atr14 * 0.5 && highPrice <= g_bosLevel + g_atr14 * 0.5 && closePrice < g_bosLevel)
-         {
-            sig.direction  = BEARISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-            sig.stopLoss   = highPrice + g_atr14 * 0.5;
-            double riskDist = sig.stopLoss - sig.entryPrice;
-            sig.takeProfit = sig.entryPrice - riskDist * InpRR_Ratio;
-            sig.reason     = "S4: Swing BOS Retest SELL";
-            sig.valid      = true;
-            g_bosRetestPending = false;
-         }
-      }
-   }
-   else if(g_bosRetestPending && g_barCount - g_bosBar > 40)
-   {
-      g_bosRetestPending = false;
-   }
-
+   else if(g_bosRetestPending && g_barCount-g_bosBar>40) g_bosRetestPending=false;
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 5: EQH/EQL Double-Tap Fade (75%)                        |
-//+------------------------------------------------------------------+
 TradeSignal Strategy5_EQH_EQL()
 {
-   TradeSignal sig;
-   sig.valid = false;
-
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-   // Check EQH sweep (third touch / sweep)
-   for(int i = ArraySize(g_equalHighs) - 1; i >= 0; i--)
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1), l=iLow(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+   for(int i=ArraySize(g_equalHighs)-1; i>=0; i--)
    {
       if(!g_equalHighs[i].valid) continue;
-
-      // Price swept above equal highs
-      if(highPrice > g_equalHighs[i].level + g_atr14 * 0.05 && closePrice < g_equalHighs[i].level)
-      {
-         sig.direction  = BEARISH;
-         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-         sig.stopLoss   = highPrice + g_atr14 * 0.2;
-         double riskDist = sig.stopLoss - sig.entryPrice;
-         // Conservative target: midpoint of prior range
-         sig.takeProfit = sig.entryPrice - riskDist * MathMin(InpRR_Ratio, 1.5);
-         sig.reason     = "S5: EQH Sweep Fade SELL";
-         sig.valid      = true;
-         g_equalHighs[i].valid = false;
-         break;
-      }
+      if(h>g_equalHighs[i].level+g_atr14*0.05 && c<g_equalHighs[i].level)
+      { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+        sig.stopLoss=h+g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*MathMin(InpRR_Ratio,1.5);
+        sig.reason="S5:EQH Fade SELL"; sig.valid=true; g_equalHighs[i].valid=false; break; }
    }
-
    if(sig.valid) return sig;
-
-   // Check EQL sweep
-   for(int i = ArraySize(g_equalLows) - 1; i >= 0; i--)
+   for(int i=ArraySize(g_equalLows)-1; i>=0; i--)
    {
       if(!g_equalLows[i].valid) continue;
-
-      if(lowPrice < g_equalLows[i].level - g_atr14 * 0.05 && closePrice > g_equalLows[i].level)
-      {
-         sig.direction  = BULLISH;
-         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-         sig.stopLoss   = lowPrice - g_atr14 * 0.2;
-         double riskDist = sig.entryPrice - sig.stopLoss;
-         sig.takeProfit = sig.entryPrice + riskDist * MathMin(InpRR_Ratio, 1.5);
-         sig.reason     = "S5: EQL Sweep Fade BUY";
-         sig.valid      = true;
-         g_equalLows[i].valid = false;
-         break;
-      }
+      if(l<g_equalLows[i].level-g_atr14*0.05 && c>g_equalLows[i].level)
+      { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        sig.stopLoss=l-g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*MathMin(InpRR_Ratio,1.5);
+        sig.reason="S5:EQL Fade BUY"; sig.valid=true; g_equalLows[i].valid=false; break; }
    }
-
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 6: Session Open Liquidity Grab (74%)                     |
-//+------------------------------------------------------------------+
 TradeSignal Strategy6_SessionGrab()
 {
-   TradeSignal sig;
-   sig.valid = false;
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   bool inLon=IsInSession(InpLondonStart,InpLondonEnd);
+   bool inNY=IsInSession(InpNYStart,InpNYEnd);
+   if(!inLon && !inNY) return sig;
 
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1), l=iLow(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
 
-   // Check if London is active and Asia has completed
-   bool inLondon = IsInSession(InpLondonStart, InpLondonEnd);
-   bool inNY     = IsInSession(InpNYStart, InpNYEnd);
-
-   if(!inLondon && !inNY) return sig;
-
-   double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-   // Check if session grab is pending
-   if(g_sessionGrabPending && g_barCount - g_sessionGrabBar <= 10)
+   if(g_sessionGrabPending && g_barCount-g_sessionGrabBar<=10)
    {
-      sig.direction  = g_sessionGrabDir;
-      sig.entryPrice = (g_sessionGrabDir == BULLISH) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      sig.stopLoss   = g_sessionGrabStop;
-      double riskDist = MathAbs(sig.entryPrice - sig.stopLoss);
-      sig.takeProfit = (g_sessionGrabDir == BULLISH) ? sig.entryPrice + riskDist * InpRR_Ratio : sig.entryPrice - riskDist * InpRR_Ratio;
-      sig.reason     = "S6: Session Grab " + (g_sessionGrabDir == BULLISH ? "BUY" : "SELL");
-      sig.valid      = true;
-      g_sessionGrabPending = false;
-      return sig;
+      sig.direction=g_sessionGrabDir;
+      sig.entryPrice=(g_sessionGrabDir==BULLISH)?SymbolInfoDouble(_Symbol,SYMBOL_ASK):SymbolInfoDouble(_Symbol,SYMBOL_BID);
+      sig.stopLoss=g_sessionGrabStop;
+      double rd=MathAbs(sig.entryPrice-sig.stopLoss);
+      sig.takeProfit=(g_sessionGrabDir==BULLISH)?sig.entryPrice+rd*InpRR_Ratio:sig.entryPrice-rd*InpRR_Ratio;
+      sig.reason="S6:SessGrab "+(string)((g_sessionGrabDir==BULLISH)?"BUY":"SELL");
+      sig.valid=true; g_sessionGrabPending=false; return sig;
    }
-
-   // Check Asia range grab during London
-   if(inLondon && !g_asiaSession.active && g_asiaSession.high > 0 && g_asiaSession.low > 0)
+   if(inLon && !g_asiaSession.active && g_asiaSession.high>0 && g_asiaSession.low>0)
    {
-      // Sweep above Asia high then close back
-      if(highPrice > g_asiaSession.high && closePrice < g_asiaSession.high)
-      {
-         g_sessionGrabPending = true;
-         g_sessionGrabDir     = BEARISH;
-         g_sessionGrabStop    = highPrice + g_atr14 * 0.3;
-         g_sessionGrabBar     = g_barCount;
-      }
-      // Sweep below Asia low then close back
-      if(lowPrice < g_asiaSession.low && closePrice > g_asiaSession.low)
-      {
-         g_sessionGrabPending = true;
-         g_sessionGrabDir     = BULLISH;
-         g_sessionGrabStop    = lowPrice - g_atr14 * 0.3;
-         g_sessionGrabBar     = g_barCount;
-      }
+      if(h>g_asiaSession.high && c<g_asiaSession.high)
+      { g_sessionGrabPending=true; g_sessionGrabDir=BEARISH; g_sessionGrabStop=h+g_atr14*0.3; g_sessionGrabBar=g_barCount; }
+      if(l<g_asiaSession.low && c>g_asiaSession.low)
+      { g_sessionGrabPending=true; g_sessionGrabDir=BULLISH; g_sessionGrabStop=l-g_atr14*0.3; g_sessionGrabBar=g_barCount; }
    }
-
-   // Check London range grab during NY
-   if(inNY && !g_londonSession.active && g_londonSession.high > 0 && g_londonSession.low > 0)
+   if(inNY && !g_londonSession.active && g_londonSession.high>0 && g_londonSession.low>0)
    {
-      if(highPrice > g_londonSession.high && closePrice < g_londonSession.high)
-      {
-         g_sessionGrabPending = true;
-         g_sessionGrabDir     = BEARISH;
-         g_sessionGrabStop    = highPrice + g_atr14 * 0.3;
-         g_sessionGrabBar     = g_barCount;
-      }
-      if(lowPrice < g_londonSession.low && closePrice > g_londonSession.low)
-      {
-         g_sessionGrabPending = true;
-         g_sessionGrabDir     = BULLISH;
-         g_sessionGrabStop    = lowPrice - g_atr14 * 0.3;
-         g_sessionGrabBar     = g_barCount;
-      }
+      if(h>g_londonSession.high && c<g_londonSession.high)
+      { g_sessionGrabPending=true; g_sessionGrabDir=BEARISH; g_sessionGrabStop=h+g_atr14*0.3; g_sessionGrabBar=g_barCount; }
+      if(l<g_londonSession.low && c>g_londonSession.low)
+      { g_sessionGrabPending=true; g_sessionGrabDir=BULLISH; g_sessionGrabStop=l-g_atr14*0.3; g_sessionGrabBar=g_barCount; }
    }
-
-   if(g_sessionGrabPending && g_barCount - g_sessionGrabBar > 10)
-      g_sessionGrabPending = false;
-
+   if(g_sessionGrabPending && g_barCount-g_sessionGrabBar>10) g_sessionGrabPending=false;
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 7: Breaker Block Entry After CHoCH (72%)                 |
-//+------------------------------------------------------------------+
 TradeSignal Strategy7_Breaker()
 {
-   TradeSignal sig;
-   sig.valid = false;
-
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   // Check for new CHoCH and register breaker pending
-   if(g_alerts.internalBullishCHoCH || g_alerts.swingBullishCHoCH)
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   if(g_alerts.internalBullishCHoCH||g_alerts.swingBullishCHoCH)
    {
-      for(int i = ArraySize(g_breakerBlocks) - 1; i >= 0; i--)
-      {
-         if(g_breakerBlocks[i].valid && g_breakerBlocks[i].isBreaker && g_breakerBlocks[i].bias == BULLISH)
-         {
-            g_breakerPending   = true;
-            g_breakerDirection = BULLISH;
-            g_breakerTop       = g_breakerBlocks[i].top;
-            g_breakerBottom    = g_breakerBlocks[i].bottom;
-            g_breakerBar       = g_barCount;
-            break;
-         }
-      }
+      for(int i=ArraySize(g_breakerBlocks)-1; i>=0; i--)
+         if(g_breakerBlocks[i].valid && g_breakerBlocks[i].isBreaker && g_breakerBlocks[i].bias==BULLISH)
+         { g_breakerPending=true; g_breakerDirection=BULLISH;
+           g_breakerTop=g_breakerBlocks[i].top; g_breakerBottom=g_breakerBlocks[i].bottom;
+           g_breakerBar=g_barCount; break; }
    }
-   if(g_alerts.internalBearishCHoCH || g_alerts.swingBearishCHoCH)
+   if(g_alerts.internalBearishCHoCH||g_alerts.swingBearishCHoCH)
    {
-      for(int i = ArraySize(g_breakerBlocks) - 1; i >= 0; i--)
-      {
-         if(g_breakerBlocks[i].valid && g_breakerBlocks[i].isBreaker && g_breakerBlocks[i].bias == BEARISH)
-         {
-            g_breakerPending   = true;
-            g_breakerDirection = BEARISH;
-            g_breakerTop       = g_breakerBlocks[i].top;
-            g_breakerBottom    = g_breakerBlocks[i].bottom;
-            g_breakerBar       = g_barCount;
-            break;
-         }
-      }
+      for(int i=ArraySize(g_breakerBlocks)-1; i>=0; i--)
+         if(g_breakerBlocks[i].valid && g_breakerBlocks[i].isBreaker && g_breakerBlocks[i].bias==BEARISH)
+         { g_breakerPending=true; g_breakerDirection=BEARISH;
+           g_breakerTop=g_breakerBlocks[i].top; g_breakerBottom=g_breakerBlocks[i].bottom;
+           g_breakerBar=g_barCount; break; }
    }
-
-   // Wait for retest of breaker block
-   if(g_breakerPending && g_barCount - g_breakerBar <= 30)
+   if(g_breakerPending && g_barCount-g_breakerBar<=30)
    {
-      double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-      double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-      double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-      if(g_breakerDirection == BULLISH)
-      {
-         if(lowPrice <= g_breakerTop && lowPrice >= g_breakerBottom && closePrice > g_breakerBottom)
-         {
-            sig.direction  = BULLISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-            sig.stopLoss   = g_breakerBottom - g_atr14 * 0.2;
-            double riskDist = sig.entryPrice - sig.stopLoss;
-            sig.takeProfit = sig.entryPrice + riskDist * InpRR_Ratio;
-            sig.reason     = "S7: Breaker Retest BUY";
-            sig.valid      = true;
-            g_breakerPending = false;
-         }
-      }
-      else
-      {
-         if(highPrice >= g_breakerBottom && highPrice <= g_breakerTop && closePrice < g_breakerTop)
-         {
-            sig.direction  = BEARISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-            sig.stopLoss   = g_breakerTop + g_atr14 * 0.2;
-            double riskDist = sig.stopLoss - sig.entryPrice;
-            sig.takeProfit = sig.entryPrice - riskDist * InpRR_Ratio;
-            sig.reason     = "S7: Breaker Retest SELL";
-            sig.valid      = true;
-            g_breakerPending = false;
-         }
-      }
+      double l=iLow(_Symbol,PERIOD_CURRENT,1), h=iHigh(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+      if(g_breakerDirection==BULLISH && l<=g_breakerTop && l>=g_breakerBottom && c>g_breakerBottom)
+      { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        sig.stopLoss=g_breakerBottom-g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*InpRR_Ratio;
+        sig.reason="S7:Breaker BUY"; sig.valid=true; g_breakerPending=false; }
+      if(g_breakerDirection==BEARISH && h>=g_breakerBottom && h<=g_breakerTop && c<g_breakerTop)
+      { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+        sig.stopLoss=g_breakerTop+g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*InpRR_Ratio;
+        sig.reason="S7:Breaker SELL"; sig.valid=true; g_breakerPending=false; }
    }
-   else if(g_breakerPending && g_barCount - g_breakerBar > 30)
-   {
-      g_breakerPending = false;
-   }
-
+   else if(g_breakerPending && g_barCount-g_breakerBar>30) g_breakerPending=false;
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 8: PDH/PDL Liquidity Sweep Reversal (70%)                |
-//+------------------------------------------------------------------+
 TradeSignal Strategy8_PDH_PDL()
 {
-   TradeSignal sig;
-   sig.valid = false;
-
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   bool inKillzone = IsInSession(InpLondonStart, InpLondonEnd) || IsInSession(InpNYStart, InpNYEnd);
-   if(!inKillzone) return sig;
-
-   double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-   // PDH sweep
-   if(g_prevDayHigh > 0 && highPrice > g_prevDayHigh && closePrice < g_prevDayHigh)
-   {
-      // Bearish reversal after PDH sweep
-      if(g_internalTrend == BEARISH || g_swingTrend == BEARISH)
-      {
-         sig.direction  = BEARISH;
-         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-         sig.stopLoss   = highPrice + g_atr14 * 0.3;
-         double riskDist = sig.stopLoss - sig.entryPrice;
-         sig.takeProfit = sig.entryPrice - riskDist * InpRR_Ratio;
-         sig.reason     = "S8: PDH Sweep SELL";
-         sig.valid      = true;
-      }
-   }
-
-   // PDL sweep
-   if(g_prevDayLow > 0 && lowPrice < g_prevDayLow && closePrice > g_prevDayLow)
-   {
-      if(g_internalTrend == BULLISH || g_swingTrend == BULLISH)
-      {
-         sig.direction  = BULLISH;
-         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-         sig.stopLoss   = lowPrice - g_atr14 * 0.3;
-         double riskDist = sig.entryPrice - sig.stopLoss;
-         sig.takeProfit = sig.entryPrice + riskDist * InpRR_Ratio;
-         sig.reason     = "S8: PDL Sweep BUY";
-         sig.valid      = true;
-      }
-   }
-
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   if(!IsInSession(InpLondonStart,InpLondonEnd) && !IsInSession(InpNYStart,InpNYEnd)) return sig;
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1), l=iLow(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+   if(g_prevDayHigh>0 && h>g_prevDayHigh && c<g_prevDayHigh && (g_internalTrend==BEARISH||g_swingTrend==BEARISH))
+   { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+     sig.stopLoss=h+g_atr14*0.3; sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*InpRR_Ratio;
+     sig.reason="S8:PDH Sweep SELL"; sig.valid=true; }
+   if(g_prevDayLow>0 && l<g_prevDayLow && c>g_prevDayLow && (g_internalTrend==BULLISH||g_swingTrend==BULLISH))
+   { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+     sig.stopLoss=l-g_atr14*0.3; sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*InpRR_Ratio;
+     sig.reason="S8:PDL Sweep BUY"; sig.valid=true; }
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 9: FVG Fill Entry on Pullback (68%)                      |
-//+------------------------------------------------------------------+
 TradeSignal Strategy9_FVG()
 {
-   TradeSignal sig;
-   sig.valid = false;
-
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   double highPrice  = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double lowPrice   = iLow(_Symbol, PERIOD_CURRENT, 1);
-   double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-   for(int i = ArraySize(g_fvg) - 1; i >= 0; i--)
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   double h=iHigh(_Symbol,PERIOD_CURRENT,1), l=iLow(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+   for(int i=ArraySize(g_fvg)-1; i>=0; i--)
    {
       if(!g_fvg[i].valid || g_fvg[i].mitigated) continue;
-
-      double midpoint = (g_fvg[i].top + g_fvg[i].bottom) / 2.0;
-
-      // Bullish FVG fill - only if swing trend is bullish
-      if(g_fvg[i].bias == BULLISH && g_swingTrend == BULLISH)
-      {
-         // Price pulled back into FVG
-         if(lowPrice <= g_fvg[i].top && lowPrice >= g_fvg[i].bottom && closePrice > g_fvg[i].bottom)
-         {
-            sig.direction  = BULLISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-            sig.stopLoss   = g_fvg[i].bottom - g_atr14 * 0.2;
-            double riskDist = sig.entryPrice - sig.stopLoss;
-            sig.takeProfit = sig.entryPrice + riskDist * InpRR_Ratio;
-            sig.reason     = "S9: Bullish FVG Fill BUY";
-            sig.valid      = true;
-            g_fvg[i].mitigated = true;
-            break;
-         }
-      }
-
-      // Bearish FVG fill
-      if(g_fvg[i].bias == BEARISH && g_swingTrend == BEARISH)
-      {
-         if(highPrice >= g_fvg[i].bottom && highPrice <= g_fvg[i].top && closePrice < g_fvg[i].top)
-         {
-            sig.direction  = BEARISH;
-            sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-            sig.stopLoss   = g_fvg[i].top + g_atr14 * 0.2;
-            double riskDist = sig.stopLoss - sig.entryPrice;
-            sig.takeProfit = sig.entryPrice - riskDist * InpRR_Ratio;
-            sig.reason     = "S9: Bearish FVG Fill SELL";
-            sig.valid      = true;
-            g_fvg[i].mitigated = true;
-            break;
-         }
-      }
+      if(g_fvg[i].bias==BULLISH && g_swingTrend==BULLISH && l<=g_fvg[i].top && l>=g_fvg[i].bottom && c>g_fvg[i].bottom)
+      { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        sig.stopLoss=g_fvg[i].bottom-g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice+(sig.entryPrice-sig.stopLoss)*InpRR_Ratio;
+        sig.reason="S9:FVG BUY"; sig.valid=true; g_fvg[i].mitigated=true; break; }
+      if(g_fvg[i].bias==BEARISH && g_swingTrend==BEARISH && h>=g_fvg[i].bottom && h<=g_fvg[i].top && c<g_fvg[i].top)
+      { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+        sig.stopLoss=g_fvg[i].top+g_atr14*0.2;
+        sig.takeProfit=sig.entryPrice-(sig.stopLoss-sig.entryPrice)*InpRR_Ratio;
+        sig.reason="S9:FVG SELL"; sig.valid=true; g_fvg[i].mitigated=true; break; }
    }
-
    return sig;
 }
 
-//+------------------------------------------------------------------+
-//| Strategy 10: Strong/Weak High/Low Structural Trade (65%)          |
-//+------------------------------------------------------------------+
 TradeSignal Strategy10_StrongWeak()
 {
-   TradeSignal sig;
-   sig.valid = false;
+   TradeSignal sig; sig.valid=false;
+   if(CountOpenTrades()>=InpMaxTrades) return sig;
+   if(g_trailing.top==0||g_trailing.bottom==0) return sig;
 
-   if(CountOpenTrades() >= InpMaxTrades) return sig;
-
-   if(g_trailing.top == 0 || g_trailing.bottom == 0) return sig;
-
-   // Determine strong/weak labels
-   bool isStrongHigh = (g_swingTrend == BEARISH);
-   bool isWeakHigh   = (g_swingTrend == BULLISH);
-   bool isStrongLow  = (g_swingTrend == BULLISH);
-   bool isWeakLow    = (g_swingTrend == BEARISH);
-
-   // In bullish swing: buy pullbacks targeting the Weak High
-   if(g_swingTrend == BULLISH && isWeakHigh)
+   if(g_swingTrend==BULLISH && (g_alerts.internalBullishBOS||g_alerts.internalBullishCHoCH))
    {
-      // Need an internal OB or BOS for entry confirmation
-      if(g_alerts.internalBullishBOS || g_alerts.internalBullishCHoCH)
+      for(int i=ArraySize(g_internalOB)-1; i>=0; i--)
       {
-         // Look for internal OB to enter from
-         for(int i = ArraySize(g_internalOB) - 1; i >= 0; i--)
-         {
-            if(!g_internalOB[i].valid || g_internalOB[i].bias != BULLISH) continue;
-
-            double lowPrice = iLow(_Symbol, PERIOD_CURRENT, 1);
-            double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-            if(lowPrice <= g_internalOB[i].top && closePrice > g_internalOB[i].bottom)
-            {
-               sig.direction  = BULLISH;
-               sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-               sig.stopLoss   = g_internalOB[i].bottom - g_atr14 * 0.2;
-               sig.takeProfit = g_trailing.top; // Target weak high
-               double riskDist = sig.entryPrice - sig.stopLoss;
-               if(riskDist > 0 && (sig.takeProfit - sig.entryPrice) / riskDist >= 1.0)
-               {
-                  sig.reason = "S10: Weak High Target BUY";
-                  sig.valid  = true;
-               }
-               break;
-            }
-         }
+         if(!g_internalOB[i].valid || g_internalOB[i].bias!=BULLISH) continue;
+         double l=iLow(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+         if(l<=g_internalOB[i].top && c>g_internalOB[i].bottom)
+         { sig.direction=BULLISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+           sig.stopLoss=g_internalOB[i].bottom-g_atr14*0.2;
+           sig.takeProfit=g_trailing.top;
+           double rd=sig.entryPrice-sig.stopLoss;
+           if(rd>0 && (sig.takeProfit-sig.entryPrice)/rd>=1.0)
+           { sig.reason="S10:Weak High BUY"; sig.valid=true; } break; }
       }
    }
-
-   // In bearish swing: sell rallies targeting the Weak Low
-   if(!sig.valid && g_swingTrend == BEARISH && isWeakLow)
+   if(!sig.valid && g_swingTrend==BEARISH && (g_alerts.internalBearishBOS||g_alerts.internalBearishCHoCH))
    {
-      if(g_alerts.internalBearishBOS || g_alerts.internalBearishCHoCH)
+      for(int i=ArraySize(g_internalOB)-1; i>=0; i--)
       {
-         for(int i = ArraySize(g_internalOB) - 1; i >= 0; i--)
-         {
-            if(!g_internalOB[i].valid || g_internalOB[i].bias != BEARISH) continue;
-
-            double highPrice = iHigh(_Symbol, PERIOD_CURRENT, 1);
-            double closePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-            if(highPrice >= g_internalOB[i].bottom && closePrice < g_internalOB[i].top)
-            {
-               sig.direction  = BEARISH;
-               sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-               sig.stopLoss   = g_internalOB[i].top + g_atr14 * 0.2;
-               sig.takeProfit = g_trailing.bottom; // Target weak low
-               double riskDist = sig.stopLoss - sig.entryPrice;
-               if(riskDist > 0 && (sig.entryPrice - sig.takeProfit) / riskDist >= 1.0)
-               {
-                  sig.reason = "S10: Weak Low Target SELL";
-                  sig.valid  = true;
-               }
-               break;
-            }
-         }
+         if(!g_internalOB[i].valid || g_internalOB[i].bias!=BEARISH) continue;
+         double h=iHigh(_Symbol,PERIOD_CURRENT,1), c=iClose(_Symbol,PERIOD_CURRENT,1);
+         if(h>=g_internalOB[i].bottom && c<g_internalOB[i].top)
+         { sig.direction=BEARISH; sig.entryPrice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+           sig.stopLoss=g_internalOB[i].top+g_atr14*0.2;
+           sig.takeProfit=g_trailing.bottom;
+           double rd=sig.stopLoss-sig.entryPrice;
+           if(rd>0 && (sig.entryPrice-sig.takeProfit)/rd>=1.0)
+           { sig.reason="S10:Weak Low SELL"; sig.valid=true; } break; }
       }
    }
-
    return sig;
 }
 
@@ -2010,509 +1814,43 @@ TradeSignal Strategy10_StrongWeak()
 void ExecuteTrade(TradeSignal &signal)
 {
    if(!signal.valid) return;
+   double sd=MathAbs(signal.entryPrice-signal.stopLoss)/_Point;
+   if(sd<1) return;
+   double lots=CalculateLotSize(sd);
+   int d=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   signal.stopLoss=NormalizeDouble(signal.stopLoss,d);
+   signal.takeProfit=NormalizeDouble(signal.takeProfit,d);
+   signal.entryPrice=NormalizeDouble(signal.entryPrice,d);
 
-   double stopDist = MathAbs(signal.entryPrice - signal.stopLoss) / _Point;
-   if(stopDist < 1) return;
+   bool ok=false;
+   if(signal.direction==BULLISH) ok=g_trade.Buy(lots,_Symbol,signal.entryPrice,signal.stopLoss,signal.takeProfit,signal.reason);
+   else                          ok=g_trade.Sell(lots,_Symbol,signal.entryPrice,signal.stopLoss,signal.takeProfit,signal.reason);
 
-   double lots = CalculateLotSize(stopDist);
-
-   // Normalize prices
-   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   signal.stopLoss   = NormalizeDouble(signal.stopLoss, digits);
-   signal.takeProfit = NormalizeDouble(signal.takeProfit, digits);
-   signal.entryPrice = NormalizeDouble(signal.entryPrice, digits);
-
-   bool result = false;
-
-   if(signal.direction == BULLISH)
+   if(ok)
    {
-      result = g_trade.Buy(lots, _Symbol, signal.entryPrice, signal.stopLoss, signal.takeProfit, signal.reason);
+      Print("Trade: ",signal.reason," Lots=",lots," SL=",signal.stopLoss," TP=",signal.takeProfit);
+      if(InpDrawGraphics) GfxDrawTradeArrow(signal.direction, signal.entryPrice, iTime(_Symbol,PERIOD_CURRENT,0));
    }
-   else
-   {
-      result = g_trade.Sell(lots, _Symbol, signal.entryPrice, signal.stopLoss, signal.takeProfit, signal.reason);
-   }
-
-   if(result)
-   {
-      Print("Trade opened: ", signal.reason, " Lots=", lots, " SL=", signal.stopLoss, " TP=", signal.takeProfit);
-
-      if(InpDrawGraphics)
-         DrawTradeArrow(signal.direction, signal.entryPrice, iTime(_Symbol, PERIOD_CURRENT, 0));
-   }
-   else
-   {
-      Print("Trade failed: ", signal.reason, " Error=", GetLastError());
-   }
+   else Print("Trade FAILED: ",signal.reason," Err=",GetLastError());
 }
 
 //+------------------------------------------------------------------+
-//| TRAILING STOP MANAGEMENT                                          |
+//| TRAILING STOP                                                     |
 //+------------------------------------------------------------------+
 void ManageTrailingStop()
 {
-   if(g_atrTrail <= 0) return;
-
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   if(g_atrTrail<=0) return;
+   for(int i=PositionsTotal()-1; i>=0; i--)
    {
       if(!g_posInfo.SelectByIndex(i)) continue;
-      if(g_posInfo.Symbol() != _Symbol || g_posInfo.Magic() != InpMagicNumber) continue;
-
-      double currentSL = g_posInfo.StopLoss();
-      double currentPrice = g_posInfo.PriceCurrent();
-      double trailDist = g_atrTrail * InpTrailATR_Mult;
-      int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-
-      if(g_posInfo.PositionType() == POSITION_TYPE_BUY)
-      {
-         double newSL = NormalizeDouble(currentPrice - trailDist, digits);
-         if(newSL > currentSL && newSL < currentPrice)
-         {
-            g_trade.PositionModify(g_posInfo.Ticket(), newSL, g_posInfo.TakeProfit());
-         }
-      }
-      else if(g_posInfo.PositionType() == POSITION_TYPE_SELL)
-      {
-         double newSL = NormalizeDouble(currentPrice + trailDist, digits);
-         if((newSL < currentSL || currentSL == 0) && newSL > currentPrice)
-         {
-            g_trade.PositionModify(g_posInfo.Ticket(), newSL, g_posInfo.TakeProfit());
-         }
-      }
-   }
-}
-
-//+------------------------------------------------------------------+
-//| ================ GRAPHICAL OBJECT DRAWING ================        |
-//+------------------------------------------------------------------+
-
-void DrawStructureObjects()
-{
-   datetime currentTime = iTime(_Symbol, PERIOD_CURRENT, 0);
-
-   // Draw internal structure lines
-   if(g_alerts.internalBullishBOS)
-      DrawStructureLine(g_internalHigh.barTime, g_internalHigh.currentLevel, currentTime, "iBOS", InpBullColor, STYLE_DASH);
-   if(g_alerts.internalBearishBOS)
-      DrawStructureLine(g_internalLow.barTime, g_internalLow.currentLevel, currentTime, "iBOS", InpBearColor, STYLE_DASH);
-   if(g_alerts.internalBullishCHoCH)
-      DrawStructureLine(g_internalHigh.barTime, g_internalHigh.currentLevel, currentTime, "iCHoCH", InpBullColor, STYLE_DASH);
-   if(g_alerts.internalBearishCHoCH)
-      DrawStructureLine(g_internalLow.barTime, g_internalLow.currentLevel, currentTime, "iCHoCH", InpBearColor, STYLE_DASH);
-
-   // Draw swing structure lines
-   if(g_alerts.swingBullishBOS)
-      DrawStructureLine(g_swingHigh.barTime, g_swingHigh.currentLevel, currentTime, "BOS", InpBullColor, STYLE_SOLID);
-   if(g_alerts.swingBearishBOS)
-      DrawStructureLine(g_swingLow.barTime, g_swingLow.currentLevel, currentTime, "BOS", InpBearColor, STYLE_SOLID);
-   if(g_alerts.swingBullishCHoCH)
-      DrawStructureLine(g_swingHigh.barTime, g_swingHigh.currentLevel, currentTime, "CHoCH", InpBullColor, STYLE_SOLID);
-   if(g_alerts.swingBearishCHoCH)
-      DrawStructureLine(g_swingLow.barTime, g_swingLow.currentLevel, currentTime, "CHoCH", InpBearColor, STYLE_SOLID);
-}
-
-void DrawStructureLine(datetime t1, double price, datetime t2, string label, color clr, ENUM_LINE_STYLE style)
-{
-   string name = ObjName("Struct_" + label);
-   ObjectCreate(0, name, OBJ_TREND, 0, t1, price, t2, price);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_STYLE, style);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, style == STYLE_SOLID ? 2 : 1);
-   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
-   ObjectSetInteger(0, name, OBJPROP_BACK, true);
-
-   // Label
-   string lblName = ObjName("StructLbl_" + label);
-   datetime midTime = t1 + (t2 - t1) / 2;
-   ObjectCreate(0, lblName, OBJ_TEXT, 0, midTime, price);
-   ObjectSetString(0, lblName, OBJPROP_TEXT, label);
-   ObjectSetInteger(0, lblName, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 8);
-   ObjectSetString(0, lblName, OBJPROP_FONT, "Arial");
-   ObjectSetInteger(0, lblName, OBJPROP_ANCHOR, ANCHOR_LOWER);
-}
-
-void DrawOrderBlockObjects()
-{
-   // Draw internal OBs
-   for(int i = 0; i < ArraySize(g_internalOB); i++)
-   {
-      if(!g_internalOB[i].valid) continue;
-
-      string name = g_internalOB[i].objName;
-      if(ObjectFind(0, name) >= 0) continue; // already drawn
-
-      datetime rightTime = iTime(_Symbol, PERIOD_CURRENT, 0);
-      color clr = (g_internalOB[i].bias == BULLISH) ? InpOB_BullColor : InpOB_BearColor;
-
-      ObjectCreate(0, name, OBJ_RECTANGLE, 0, g_internalOB[i].barTime, g_internalOB[i].top, rightTime, g_internalOB[i].bottom);
-      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, name, OBJPROP_FILL, true);
-      ObjectSetInteger(0, name, OBJPROP_BACK, true);
-      ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
-
-      // Label
-      string lblName = name + "_lbl";
-      ObjectCreate(0, lblName, OBJ_TEXT, 0, g_internalOB[i].barTime, (g_internalOB[i].top + g_internalOB[i].bottom) / 2.0);
-      ObjectSetString(0, lblName, OBJPROP_TEXT, (g_internalOB[i].bias == BULLISH) ? "iOB+" : "iOB-");
-      ObjectSetInteger(0, lblName, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
-   }
-
-   // Draw swing OBs
-   for(int i = 0; i < ArraySize(g_swingOB); i++)
-   {
-      if(!g_swingOB[i].valid) continue;
-
-      string name = g_swingOB[i].objName;
-      if(ObjectFind(0, name) >= 0) continue;
-
-      datetime rightTime = iTime(_Symbol, PERIOD_CURRENT, 0);
-      color clr = (g_swingOB[i].bias == BULLISH) ? InpOB_BullColor : InpOB_BearColor;
-
-      ObjectCreate(0, name, OBJ_RECTANGLE, 0, g_swingOB[i].barTime, g_swingOB[i].top, rightTime, g_swingOB[i].bottom);
-      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, name, OBJPROP_FILL, true);
-      ObjectSetInteger(0, name, OBJPROP_BACK, true);
-      ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
-
-      string lblName = name + "_lbl";
-      ObjectCreate(0, lblName, OBJ_TEXT, 0, g_swingOB[i].barTime, (g_swingOB[i].top + g_swingOB[i].bottom) / 2.0);
-      ObjectSetString(0, lblName, OBJPROP_TEXT, (g_swingOB[i].bias == BULLISH) ? "OB+" : "OB-");
-      ObjectSetInteger(0, lblName, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 8);
-   }
-
-   // Draw breaker blocks
-   for(int i = 0; i < ArraySize(g_breakerBlocks); i++)
-   {
-      if(!g_breakerBlocks[i].valid) continue;
-
-      string name = g_breakerBlocks[i].objName;
-      if(ObjectFind(0, name) >= 0) continue;
-
-      datetime rightTime = iTime(_Symbol, PERIOD_CURRENT, 0);
-      color clr;
-      string tag;
-
-      if(g_breakerBlocks[i].isBreaker)
-      {
-         clr = (g_breakerBlocks[i].bias == BULLISH) ? InpBreakerBullColor : InpBreakerBearColor;
-         tag = (g_breakerBlocks[i].bias == BULLISH) ? "B-BRK" : "S-BRK";
-      }
+      if(g_posInfo.Symbol()!=_Symbol || g_posInfo.Magic()!=InpMagicNumber) continue;
+      double sl=g_posInfo.StopLoss(), cp=g_posInfo.PriceCurrent();
+      double td=g_atrTrail*InpTrailATR_Mult;
+      int d=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+      if(g_posInfo.PositionType()==POSITION_TYPE_BUY)
+      { double ns=NormalizeDouble(cp-td,d); if(ns>sl && ns<cp) g_trade.PositionModify(g_posInfo.Ticket(),ns,g_posInfo.TakeProfit()); }
       else
-      {
-         clr = (g_breakerBlocks[i].bias == BULLISH) ? clrRoyalBlue : clrOrangeRed;
-         tag = (g_breakerBlocks[i].bias == BULLISH) ? "B-MIT" : "S-MIT";
-      }
-
-      ObjectCreate(0, name, OBJ_RECTANGLE, 0, g_breakerBlocks[i].barTime, g_breakerBlocks[i].top, rightTime, g_breakerBlocks[i].bottom);
-      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, name, OBJPROP_FILL, true);
-      ObjectSetInteger(0, name, OBJPROP_BACK, true);
-
-      string lblName = name + "_lbl";
-      double lblPrice = (g_breakerBlocks[i].bias == BULLISH) ? g_breakerBlocks[i].bottom : g_breakerBlocks[i].top;
-      ObjectCreate(0, lblName, OBJ_TEXT, 0, g_breakerBlocks[i].barTime, lblPrice);
-      ObjectSetString(0, lblName, OBJPROP_TEXT, tag);
-      ObjectSetInteger(0, lblName, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
+      { double ns=NormalizeDouble(cp+td,d); if((ns<sl||sl==0) && ns>cp) g_trade.PositionModify(g_posInfo.Ticket(),ns,g_posInfo.TakeProfit()); }
    }
-}
-
-void DrawFVGObjects()
-{
-   for(int i = 0; i < ArraySize(g_fvg); i++)
-   {
-      if(!g_fvg[i].valid) continue;
-
-      string name = g_fvg[i].objName;
-      if(ObjectFind(0, name) >= 0) continue;
-
-      color clr = (g_fvg[i].bias == BULLISH) ? InpFVG_BullColor : InpFVG_BearColor;
-      datetime rightTime = g_fvg[i].barTime + PeriodSeconds() * InpFVGExtendBars;
-
-      ObjectCreate(0, name, OBJ_RECTANGLE, 0, g_fvg[i].barTime, g_fvg[i].top, rightTime, g_fvg[i].bottom);
-      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, name, OBJPROP_FILL, true);
-      ObjectSetInteger(0, name, OBJPROP_BACK, true);
-
-      string lblName = name + "_lbl";
-      ObjectCreate(0, lblName, OBJ_TEXT, 0, g_fvg[i].barTime, (g_fvg[i].top + g_fvg[i].bottom) / 2.0);
-      ObjectSetString(0, lblName, OBJPROP_TEXT, (g_fvg[i].bias == BULLISH) ? "FVG+" : "FVG-");
-      ObjectSetInteger(0, lblName, OBJPROP_COLOR, clr);
-      ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
-   }
-}
-
-void DrawSweepObjects()
-{
-   // Sweep labels are drawn in DetectSweeps via DrawSweepLabel
-}
-
-void DrawSweepLabel(datetime t, double price, string text, color clr, bool isBelow)
-{
-   string name = ObjName("Sweep");
-   ObjectCreate(0, name, OBJ_TEXT, 0, t, price);
-   ObjectSetString(0, name, OBJPROP_TEXT, text);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 8);
-   ObjectSetString(0, name, OBJPROP_FONT, "Arial Bold");
-   ObjectSetInteger(0, name, OBJPROP_ANCHOR, isBelow ? ANCHOR_UPPER : ANCHOR_LOWER);
-}
-
-void DrawSessionBox(string name, datetime t1, double top, datetime t2, double bottom, color clr, string label)
-{
-   ObjectCreate(0, name, OBJ_RECTANGLE, 0, t1, top, t2, bottom);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_FILL, true);
-   ObjectSetInteger(0, name, OBJPROP_BACK, true);
-
-   string lblName = name + "_lbl";
-   ObjectCreate(0, lblName, OBJ_TEXT, 0, t1, top);
-   ObjectSetString(0, lblName, OBJPROP_TEXT, label);
-   ObjectSetInteger(0, lblName, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
-   ObjectSetInteger(0, lblName, OBJPROP_ANCHOR, ANCHOR_LOWER);
-}
-
-void DrawSessionObjects()
-{
-   // Session boxes are drawn when session ends in UpdateSessionState
-}
-
-void DrawPreviousLevels()
-{
-   if(g_prevDayHigh <= 0) return;
-
-   DrawHorizontalLevel("PDH", g_prevDayHigh, clrGray, STYLE_DOT);
-   DrawHorizontalLevel("PDL", g_prevDayLow, clrGray, STYLE_DOT);
-   DrawHorizontalLevel("PDO", g_prevDayOpen, clrDarkGray, STYLE_DOT);
-   DrawHorizontalLevel("PDC", g_prevDayClose, clrDarkGray, STYLE_DOT);
-
-   if(g_prevWeekHigh > 0)
-   {
-      DrawHorizontalLevel("PWH", g_prevWeekHigh, clrSilver, STYLE_DOT);
-      DrawHorizontalLevel("PWL", g_prevWeekLow, clrSilver, STYLE_DOT);
-   }
-}
-
-void DrawHorizontalLevel(string label, double price, color clr, ENUM_LINE_STYLE style)
-{
-   string name = PREFIX + "Level_" + label;
-   if(ObjectFind(0, name) < 0)
-   {
-      ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
-   }
-   ObjectSetDouble(0, name, OBJPROP_PRICE, price);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_STYLE, style);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
-   ObjectSetInteger(0, name, OBJPROP_BACK, true);
-   ObjectSetString(0, name, OBJPROP_TEXT, label + " " + DoubleToString(price, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)));
-}
-
-void DrawStrongWeakLevels()
-{
-   if(g_trailing.top == 0 || g_trailing.bottom == 0) return;
-
-   string strongHighLabel = (g_swingTrend == BEARISH) ? "Strong High" : "Weak High";
-   string strongLowLabel  = (g_swingTrend == BULLISH) ? "Strong Low" : "Weak Low";
-
-   color highClr = (g_swingTrend == BEARISH) ? InpBearColor : clrOrange;
-   color lowClr  = (g_swingTrend == BULLISH) ? InpBullColor : clrOrange;
-
-   // Strong/Weak High
-   string nameH = PREFIX + "SW_High";
-   if(ObjectFind(0, nameH) < 0)
-      ObjectCreate(0, nameH, OBJ_HLINE, 0, 0, g_trailing.top);
-   ObjectSetDouble(0, nameH, OBJPROP_PRICE, g_trailing.top);
-   ObjectSetInteger(0, nameH, OBJPROP_COLOR, highClr);
-   ObjectSetInteger(0, nameH, OBJPROP_STYLE, STYLE_SOLID);
-   ObjectSetInteger(0, nameH, OBJPROP_WIDTH, 1);
-   ObjectSetString(0, nameH, OBJPROP_TEXT, strongHighLabel);
-
-   // Label
-   string nameLblH = PREFIX + "SW_High_Lbl";
-   if(ObjectFind(0, nameLblH) < 0)
-      ObjectCreate(0, nameLblH, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), g_trailing.top);
-   ObjectSetDouble(0, nameLblH, OBJPROP_PRICE, g_trailing.top);
-   ObjectSetInteger(0, nameLblH, OBJPROP_TIME, iTime(_Symbol, PERIOD_CURRENT, 0));
-   ObjectSetString(0, nameLblH, OBJPROP_TEXT, strongHighLabel);
-   ObjectSetInteger(0, nameLblH, OBJPROP_COLOR, highClr);
-   ObjectSetInteger(0, nameLblH, OBJPROP_FONTSIZE, 8);
-
-   // Strong/Weak Low
-   string nameL = PREFIX + "SW_Low";
-   if(ObjectFind(0, nameL) < 0)
-      ObjectCreate(0, nameL, OBJ_HLINE, 0, 0, g_trailing.bottom);
-   ObjectSetDouble(0, nameL, OBJPROP_PRICE, g_trailing.bottom);
-   ObjectSetInteger(0, nameL, OBJPROP_COLOR, lowClr);
-   ObjectSetInteger(0, nameL, OBJPROP_STYLE, STYLE_SOLID);
-   ObjectSetInteger(0, nameL, OBJPROP_WIDTH, 1);
-   ObjectSetString(0, nameL, OBJPROP_TEXT, strongLowLabel);
-
-   string nameLblL = PREFIX + "SW_Low_Lbl";
-   if(ObjectFind(0, nameLblL) < 0)
-      ObjectCreate(0, nameLblL, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), g_trailing.bottom);
-   ObjectSetDouble(0, nameLblL, OBJPROP_PRICE, g_trailing.bottom);
-   ObjectSetInteger(0, nameLblL, OBJPROP_TIME, iTime(_Symbol, PERIOD_CURRENT, 0));
-   ObjectSetString(0, nameLblL, OBJPROP_TEXT, strongLowLabel);
-   ObjectSetInteger(0, nameLblL, OBJPROP_COLOR, lowClr);
-   ObjectSetInteger(0, nameLblL, OBJPROP_FONTSIZE, 8);
-}
-
-void DrawTradeArrow(int direction, double price, datetime t)
-{
-   string name = ObjName("Trade");
-   int code = (direction == BULLISH) ? 233 : 234; // Up/Down arrows
-   ObjectCreate(0, name, OBJ_ARROW, 0, t, price);
-   ObjectSetInteger(0, name, OBJPROP_ARROWCODE, code);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, (direction == BULLISH) ? InpBullColor : InpBearColor);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, 3);
-}
-
-//+------------------------------------------------------------------+
-//| DASHBOARD                                                         |
-//+------------------------------------------------------------------+
-void DrawDashboard()
-{
-   string name = PREFIX + "Dashboard_BG";
-   ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, InpDashX);
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, InpDashY);
-   ObjectSetInteger(0, name, OBJPROP_XSIZE, 220);
-   ObjectSetInteger(0, name, OBJPROP_YSIZE, 260);
-   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, InpDashBG);
-   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, clrSlateGray);
-   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
-   ObjectSetInteger(0, name, OBJPROP_BACK, false);
-
-   CreateDashLabel("Title", "SMC+ Dashboard", InpDashX + 10, InpDashY + 5, clrWhite, 10);
-   CreateDashLabel("Strategy", "Strategy: ---", InpDashX + 10, InpDashY + 25, clrSilver, 8);
-   CreateDashLabel("Swing", "Swing: ---", InpDashX + 10, InpDashY + 45, clrSilver, 8);
-   CreateDashLabel("Internal", "Internal: ---", InpDashX + 10, InpDashY + 65, clrSilver, 8);
-   CreateDashLabel("Session", "Session: ---", InpDashX + 10, InpDashY + 85, clrSilver, 8);
-   CreateDashLabel("OBs", "Order Blocks: ---", InpDashX + 10, InpDashY + 105, clrSilver, 8);
-   CreateDashLabel("FVGs", "FVGs: ---", InpDashX + 10, InpDashY + 125, clrSilver, 8);
-   CreateDashLabel("Breakers", "Breakers: ---", InpDashX + 10, InpDashY + 145, clrSilver, 8);
-   CreateDashLabel("LastEvent", "Last Event: None", InpDashX + 10, InpDashY + 165, clrSilver, 8);
-   CreateDashLabel("PDH_PDL", "PDH/PDL: ---", InpDashX + 10, InpDashY + 185, clrSilver, 8);
-   CreateDashLabel("Trades", "Open Trades: 0", InpDashX + 10, InpDashY + 205, clrSilver, 8);
-   CreateDashLabel("PnL", "Session P&L: ---", InpDashX + 10, InpDashY + 225, clrSilver, 8);
-}
-
-void CreateDashLabel(string id, string text, int x, int y, color clr, int fontSize)
-{
-   string name = PREFIX + "Dash_" + id;
-   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
-   ObjectSetString(0, name, OBJPROP_TEXT, text);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
-   ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
-}
-
-void UpdateDashLabel(string id, string text, color clr)
-{
-   string name = PREFIX + "Dash_" + id;
-   if(ObjectFind(0, name) >= 0)
-   {
-      ObjectSetString(0, name, OBJPROP_TEXT, text);
-      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   }
-}
-
-void UpdateDashboard()
-{
-   // Strategy name
-   string stratName = "";
-   switch(InpStrategy)
-   {
-      case STRATEGY_1_CHOCH_OB_RETEST:     stratName = "1.CHoCH+OB(85%)";   break;
-      case STRATEGY_2_SWEEP_BOS:           stratName = "2.Sweep+BOS(82%)";   break;
-      case STRATEGY_3_IDM_CONTINUATION:    stratName = "3.IDM Cont.(80%)";   break;
-      case STRATEGY_4_SWING_BOS_RETEST:    stratName = "4.BOS Retest(78%)";  break;
-      case STRATEGY_5_EQH_EQL_FADE:        stratName = "5.EQH/EQL(75%)";     break;
-      case STRATEGY_6_SESSION_LIQ_GRAB:    stratName = "6.Sess.Grab(74%)";   break;
-      case STRATEGY_7_BREAKER_ENTRY:       stratName = "7.Breaker(72%)";     break;
-      case STRATEGY_8_PDH_PDL_SWEEP:       stratName = "8.PDH/PDL(70%)";     break;
-      case STRATEGY_9_FVG_FILL:            stratName = "9.FVG Fill(68%)";    break;
-      case STRATEGY_10_STRONG_WEAK:        stratName = "10.S/W H/L(65%)";   break;
-   }
-
-   UpdateDashLabel("Strategy", "Strategy: " + stratName, clrGold);
-
-   // Swing bias
-   string swingText = (g_swingTrend == BULLISH) ? "Bullish" : (g_swingTrend == BEARISH) ? "Bearish" : "Neutral";
-   color  swingClr  = (g_swingTrend == BULLISH) ? InpBullColor : (g_swingTrend == BEARISH) ? InpBearColor : clrGray;
-   UpdateDashLabel("Swing", "Swing: " + swingText, swingClr);
-
-   // Internal bias
-   string intText = (g_internalTrend == BULLISH) ? "Bullish" : (g_internalTrend == BEARISH) ? "Bearish" : "Neutral";
-   color  intClr  = (g_internalTrend == BULLISH) ? InpBullColor : (g_internalTrend == BEARISH) ? InpBearColor : clrGray;
-   UpdateDashLabel("Internal", "Internal: " + intText, intClr);
-
-   // Session
-   string sessText = "None";
-   color sessClr = clrGray;
-   if(g_asiaSession.active)    { sessText = "Asia"; sessClr = InpAsiaColor; }
-   if(g_londonSession.active)  { sessText = "London"; sessClr = InpLondonColor; }
-   if(g_nySession.active)      { sessText = "New York"; sessClr = InpNYColor; }
-   UpdateDashLabel("Session", "Session: " + sessText, sessClr);
-
-   // Counts
-   int obCount = 0;
-   for(int i = 0; i < ArraySize(g_internalOB); i++) if(g_internalOB[i].valid) obCount++;
-   for(int i = 0; i < ArraySize(g_swingOB); i++) if(g_swingOB[i].valid) obCount++;
-   UpdateDashLabel("OBs", "Order Blocks: " + IntegerToString(obCount), clrSilver);
-
-   int fvgCount = 0;
-   for(int i = 0; i < ArraySize(g_fvg); i++) if(g_fvg[i].valid) fvgCount++;
-   UpdateDashLabel("FVGs", "FVGs: " + IntegerToString(fvgCount), clrSilver);
-
-   int brkCount = 0;
-   for(int i = 0; i < ArraySize(g_breakerBlocks); i++) if(g_breakerBlocks[i].valid) brkCount++;
-   UpdateDashLabel("Breakers", "Breakers: " + IntegerToString(brkCount), clrSilver);
-
-   // Last event
-   string lastEvt = "None";
-   color evtClr = clrGray;
-   if(g_alerts.internalBullishCHoCH)     { lastEvt = "Bull iCHoCH"; evtClr = InpBullColor; }
-   else if(g_alerts.internalBearishCHoCH){ lastEvt = "Bear iCHoCH"; evtClr = InpBearColor; }
-   else if(g_alerts.swingBullishBOS)     { lastEvt = "Bull BOS"; evtClr = InpBullColor; }
-   else if(g_alerts.swingBearishBOS)     { lastEvt = "Bear BOS"; evtClr = InpBearColor; }
-   else if(g_alerts.bullishSweep)        { lastEvt = "SSL Sweep"; evtClr = InpSweepBullColor; }
-   else if(g_alerts.bearishSweep)        { lastEvt = "BSL Sweep"; evtClr = InpSweepBearColor; }
-   else if(g_alerts.bullishIDM)          { lastEvt = "Bull IDM"; evtClr = clrDodgerBlue; }
-   else if(g_alerts.bearishIDM)          { lastEvt = "Bear IDM"; evtClr = clrDodgerBlue; }
-   else if(g_alerts.bullishDisplacement) { lastEvt = "Bull DISP"; evtClr = InpBullColor; }
-   else if(g_alerts.bearishDisplacement) { lastEvt = "Bear DISP"; evtClr = InpBearColor; }
-   UpdateDashLabel("LastEvent", "Last Event: " + lastEvt, evtClr);
-
-   // PDH/PDL
-   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   if(g_prevDayHigh > 0)
-      UpdateDashLabel("PDH_PDL", "PDH:" + DoubleToString(g_prevDayHigh, digits) + " PDL:" + DoubleToString(g_prevDayLow, digits), clrSilver);
-
-   // Trades
-   int trades = CountOpenTrades();
-   UpdateDashLabel("Trades", "Open Trades: " + IntegerToString(trades), trades > 0 ? clrGold : clrSilver);
-
-   // P&L
-   double pnl = 0;
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
-   {
-      if(g_posInfo.SelectByIndex(i))
-         if(g_posInfo.Symbol() == _Symbol && g_posInfo.Magic() == InpMagicNumber)
-            pnl += g_posInfo.Profit();
-   }
-   color pnlClr = pnl >= 0 ? InpBullColor : InpBearColor;
-   UpdateDashLabel("PnL", "Session P&L: " + DoubleToString(pnl, 2), pnlClr);
-
-   ChartRedraw(0);
 }
 //+------------------------------------------------------------------+
